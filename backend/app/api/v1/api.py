@@ -1,0 +1,12 @@
+from fastapi import APIRouter
+
+from app.api.v1.endpoints import auth, dashboard, devices, health, repair_reports, reservations, work_orders
+
+api_router = APIRouter()
+api_router.include_router(health.router, prefix="/health", tags=["health"])
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+api_router.include_router(devices.router, prefix="/devices", tags=["devices"])
+api_router.include_router(reservations.router, prefix="/reservations", tags=["reservations"])
+api_router.include_router(repair_reports.router, prefix="/repair-reports", tags=["repair-reports"])
+api_router.include_router(work_orders.router, prefix="/work-orders", tags=["work-orders"])
