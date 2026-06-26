@@ -88,6 +88,16 @@ Swagger 文档：
 http://localhost:8000/docs
 ```
 
+v1.1 演示验收建议补充检查：
+
+```bash
+docker compose ps
+docker compose exec backend pytest
+docker compose exec frontend npm run build
+```
+
+以上命令都应在容器环境中执行。不要在宿主机执行 `pip install`、`npm install` 或 `npm run build`。
+
 ## 6. 容器内命令
 
 所有测试和维护命令都通过容器执行：
@@ -111,3 +121,15 @@ docker compose down
 ```bash
 docker compose down -v
 ```
+
+## 8. 常见排错
+
+| 问题 | 建议 |
+| --- | --- |
+| 后端无法连接数据库 | 检查 `DATABASE_URL` 中主机名是否为 `postgres`，并查看 `docker compose logs postgres` |
+| 前端请求 API 失败 | 检查 `VITE_API_BASE_URL` 是否为 `http://localhost:8000/api/v1`，并在浏览器 Network 中确认请求路径 |
+| 健康检查失败 | 先执行 `docker compose ps`，再分别查看 `docker compose logs backend` 和 `docker compose logs frontend` |
+| 端口被占用 | 在 `.env` 中调整 `BACKEND_PORT`、`FRONTEND_PORT` 或 `POSTGRES_PORT` 后重启 |
+| 演示数据不正确 | 合并 DB Agent 后重新执行迁移和种子数据导入；必要时使用 `docker compose down -v` 清空本地演示卷 |
+
+更完整的复试演示与验收流程见 `docs/11-v1.1-acceptance-demo.md`。

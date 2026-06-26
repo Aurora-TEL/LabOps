@@ -34,6 +34,12 @@ docker compose up --build
 - 后端 Swagger: `http://localhost:8000/docs`
 - PostgreSQL: `localhost:5432`
 
+## v1.1 演示与验收
+
+v1.1 复试演示建议按“运营首页 -> 预约管理 -> 设备状态 -> 报修工单 -> 数据分析 -> Swagger/容器化总结”的路径展开，控制在 3-5 分钟内。
+
+详细验收清单、演示串词、Docker 排错和多 Agent 合并风险见：[v1.1 验收与演示手册](docs/11-v1.1-acceptance-demo.md)。
+
 ## 开发流程
 
 1. 梳理需求文档、功能模块、角色权限、业务流程。
@@ -64,3 +70,4 @@ LabOps/
 - [多 Agent 任务拆分表](docs/08-agent-task-board.md)
 - [Docker 部署说明](docs/09-deployment.md)
 - [v1.1 开发路线](docs/10-v1.1-roadmap.md)
+- [v1.1 验收与演示手册](docs/11-v1.1-acceptance-demo.md)
