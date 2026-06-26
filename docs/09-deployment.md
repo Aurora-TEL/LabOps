@@ -36,6 +36,9 @@ cp .env.example .env
 | `DATABASE_URL` | `postgresql+psycopg://labops:labops_dev_password@postgres:5432/labops` | 后端容器访问数据库的连接串 |
 | `CORS_ORIGINS` | `["http://localhost:5173"]` | 后端允许的前端来源 |
 | `VITE_API_BASE_URL` | `http://localhost:8000/api/v1` | 前端访问后端 API 的基础地址 |
+| `VITE_API_PROXY_TARGET` | `http://backend:8000` | Vite 开发服务器代理 `/api` 的后端容器地址 |
+
+前端 API client 会优先使用 `VITE_API_BASE_URL`。如果需要走容器内反向代理，可将 `VITE_API_BASE_URL` 设为 `/api/v1` 或不设置该变量；开发模式由 Vite 将 `/api` 转发到 `VITE_API_PROXY_TARGET`，预览镜像由 nginx 将 `/api/` 转发到 `backend:8000`。
 
 ## 4. 启动
 

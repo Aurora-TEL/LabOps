@@ -12,11 +12,14 @@ import {
   Settings,
   Wrench
 } from 'lucide-vue-next';
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
+
+import { useOperationsStore } from '@/stores/operations';
 
 const route = useRoute();
 const collapsed = ref(false);
+const operationsStore = useOperationsStore();
 
 const navItems = [
   { label: '运营首页', path: '/dashboard', icon: LayoutDashboard },
@@ -28,6 +31,12 @@ const navItems = [
 ];
 
 const title = computed(() => String(route.meta.title ?? '运营首页'));
+
+onMounted(() => {
+  if (!operationsStore.loaded) {
+    void operationsStore.load();
+  }
+});
 </script>
 
 <template>

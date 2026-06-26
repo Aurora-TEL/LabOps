@@ -2,10 +2,11 @@
 import { Cpu, Filter, Plus } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 
+import DataState from '@/components/common/DataState.vue';
 import StatusPill from '@/components/common/StatusPill.vue';
 import { useOperationsStore } from '@/stores/operations';
 
-const { data } = storeToRefs(useOperationsStore());
+const { data, loading, error, source } = storeToRefs(useOperationsStore());
 </script>
 
 <template>
@@ -17,10 +18,13 @@ const { data } = storeToRefs(useOperationsStore());
         <p class="subtle">展示设备运行、利用率、温度和下次保养时间，后续可接入实时采集数据。</p>
       </div>
       <div class="toolbar">
+        <span class="source-badge">{{ source === 'api' ? '后端接口' : '演示数据' }}</span>
         <button class="text-button" type="button"><Filter :size="17" />筛选</button>
         <button class="text-button primary" type="button"><Plus :size="17" />新增设备</button>
       </div>
     </section>
+
+    <DataState :loading="loading" :error="error" :empty="data.deviceStatuses.length === 0" empty-text="暂无设备台账" />
 
     <section class="device-grid">
       <article v-for="device in data.deviceStatuses" :key="device.id" class="panel device-card">

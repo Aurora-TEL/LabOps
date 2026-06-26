@@ -2,10 +2,11 @@
 import { CalendarPlus, Download, Filter } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 
+import DataState from '@/components/common/DataState.vue';
 import StatusPill from '@/components/common/StatusPill.vue';
 import { useOperationsStore } from '@/stores/operations';
 
-const { data } = storeToRefs(useOperationsStore());
+const { data, loading, error, source } = storeToRefs(useOperationsStore());
 </script>
 
 <template>
@@ -17,6 +18,7 @@ const { data } = storeToRefs(useOperationsStore());
         <p class="subtle">用于展示申请人、部门、预约时段与审核状态，后续可接入审批和冲突校验接口。</p>
       </div>
       <div class="toolbar">
+        <span class="source-badge">{{ source === 'api' ? '后端接口' : '演示数据' }}</span>
         <select class="field" aria-label="状态">
           <option>全部状态</option>
           <option>待审核</option>
@@ -28,6 +30,8 @@ const { data } = storeToRefs(useOperationsStore());
         <button class="text-button primary" type="button"><CalendarPlus :size="17" />新建预约</button>
       </div>
     </section>
+
+    <DataState :loading="loading" :error="error" :empty="data.reservations.length === 0" empty-text="暂无预约记录" />
 
     <section class="panel">
       <div class="panel-header">
@@ -54,6 +58,9 @@ const { data } = storeToRefs(useOperationsStore());
               <td>{{ item.department }}</td>
               <td>{{ item.slot }}</td>
               <td><StatusPill :value="item.status" /></td>
+            </tr>
+            <tr v-if="data.reservations.length === 0">
+              <td colspan="6">暂无预约记录</td>
             </tr>
           </tbody>
         </table>

@@ -4,9 +4,10 @@ import { storeToRefs } from 'pinia';
 import { computed } from 'vue';
 
 import ChartPanel from '@/components/common/ChartPanel.vue';
+import DataState from '@/components/common/DataState.vue';
 import { useOperationsStore } from '@/stores/operations';
 
-const { data } = storeToRefs(useOperationsStore());
+const { data, loading, error, source } = storeToRefs(useOperationsStore());
 
 const oeeOption = computed<EChartsOption>(() => ({
   color: ['#1769e0', '#19a974', '#f59e0b'],
@@ -47,6 +48,7 @@ const energyOption = computed<EChartsOption>(() => ({
         <p class="subtle">沉淀产量、合格率、OEE 与能耗指标，便于后续接入 BI 或设备采集服务。</p>
       </div>
       <div class="toolbar">
+        <span class="source-badge">{{ source === 'api' ? '后端接口' : '演示数据' }}</span>
         <select class="field" aria-label="时间范围">
           <option>近 7 天</option>
           <option>近 30 天</option>
@@ -54,6 +56,8 @@ const energyOption = computed<EChartsOption>(() => ({
         </select>
       </div>
     </section>
+
+    <DataState :loading="loading" :error="error" :empty="data.productionRecords.length === 0" empty-text="暂无分析数据" />
 
     <section class="grid two">
       <ChartPanel title="产线质量与 OEE" :option="oeeOption" />
@@ -82,6 +86,9 @@ const energyOption = computed<EChartsOption>(() => ({
               <td>{{ item.passRate }}%</td>
               <td>{{ item.oee }}%</td>
               <td>{{ item.energy }}</td>
+            </tr>
+            <tr v-if="data.productionRecords.length === 0">
+              <td colspan="5">暂无分析数据</td>
             </tr>
           </tbody>
         </table>

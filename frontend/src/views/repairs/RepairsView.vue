@@ -3,10 +3,11 @@ import { ClipboardPlus, SlidersHorizontal } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 import { computed } from 'vue';
 
+import DataState from '@/components/common/DataState.vue';
 import StatusPill from '@/components/common/StatusPill.vue';
 import { useOperationsStore } from '@/stores/operations';
 
-const { data } = storeToRefs(useOperationsStore());
+const { data, loading, error, source } = storeToRefs(useOperationsStore());
 
 const columns = ['待派工', '处理中', '待验收', '已关闭'];
 const groupedOrders = computed(() =>
@@ -26,10 +27,13 @@ const groupedOrders = computed(() =>
         <p class="subtle">按照派工、处理、验收到关闭的流程呈现，方便答辩演示运维闭环。</p>
       </div>
       <div class="toolbar">
+        <span class="source-badge">{{ source === 'api' ? '后端接口' : '演示数据' }}</span>
         <button class="text-button" type="button"><SlidersHorizontal :size="17" />流程配置</button>
         <button class="text-button primary" type="button"><ClipboardPlus :size="17" />提交报修</button>
       </div>
     </section>
+
+    <DataState :loading="loading" :error="error" :empty="data.repairOrders.length === 0" empty-text="暂无报修工单" />
 
     <section class="kanban">
       <div v-for="column in groupedOrders" :key="column.status" class="panel lane">

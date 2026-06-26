@@ -220,6 +220,49 @@ h3 {
   font-weight: 800;
 }
 
+.data-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid #d9e4f1;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.data-state.loading svg {
+  animation: spin 1s linear infinite;
+}
+
+.data-state.warning {
+  border-color: #f7d7a3;
+  background: #fff8ec;
+  color: #9a5d00;
+}
+
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border: 1px solid #d8e5f4;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 1180px) {
   .grid.metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));

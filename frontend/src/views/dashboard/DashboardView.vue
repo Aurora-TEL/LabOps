@@ -2,17 +2,16 @@
 import type { EChartsOption } from 'echarts';
 import { storeToRefs } from 'pinia';
 import { Activity, CalendarCheck, ClipboardList, RefreshCw } from 'lucide-vue-next';
-import { computed, onMounted } from 'vue';
+import { computed } from 'vue';
 
 import ChartPanel from '@/components/common/ChartPanel.vue';
+import DataState from '@/components/common/DataState.vue';
 import MetricCard from '@/components/common/MetricCard.vue';
 import StatusPill from '@/components/common/StatusPill.vue';
 import { useOperationsStore } from '@/stores/operations';
 
 const store = useOperationsStore();
-const { data } = storeToRefs(store);
-
-onMounted(() => store.load());
+const { data, loading, error, source } = storeToRefs(store);
 
 const usageOption = computed<EChartsOption>(() => ({
   color: ['#1769e0'],
@@ -58,10 +57,13 @@ const repairOption = computed<EChartsOption>(() => ({
         <p class="subtle">面向实验室与制造现场的轻量 ERP 看板，沉淀后续 API 对接的数据结构。</p>
       </div>
       <div class="toolbar">
-        <button class="text-button" type="button"><RefreshCw :size="17" />刷新数据</button>
+        <span class="source-badge">{{ source === 'api' ? '后端接口' : '演示数据' }}</span>
+        <button class="text-button" type="button" :disabled="loading" @click="store.refresh"><RefreshCw :size="17" />刷新数据</button>
         <button class="text-button primary" type="button"><ClipboardList :size="17" />新建工单</button>
       </div>
     </section>
+
+    <DataState :loading="loading" :error="error" :empty="data.metrics.length === 0" empty-text="暂无运营指标" />
 
     <section class="grid metrics">
       <MetricCard v-for="metric in data.metrics" :key="metric.label" :metric="metric" />
@@ -94,6 +96,7 @@ const repairOption = computed<EChartsOption>(() => ({
               <div class="progress"><span :style="{ width: `${device.utilization}%` }"></span></div>
             </div>
           </article>
+          <DataState v-if="data.deviceStatuses.length === 0" empty empty-text="暂无设备状态" />
         </div>
       </div>
 
@@ -111,6 +114,7 @@ const repairOption = computed<EChartsOption>(() => ({
               </div>
               <StatusPill :value="item.status" />
             </article>
+            <DataState v-if="data.reservations.length === 0" empty empty-text="暂无预约记录" />
           </div>
         </div>
 
@@ -127,6 +131,7 @@ const repairOption = computed<EChartsOption>(() => ({
               </div>
               <StatusPill :value="item.status" />
             </article>
+            <DataState v-if="data.repairOrders.length === 0" empty empty-text="暂无报修工单" />
           </div>
         </div>
       </div>
