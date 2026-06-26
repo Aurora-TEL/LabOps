@@ -420,3 +420,11 @@
 | GET | `/permissions` | 权限列表 |
 | GET | `/labs` | 实验室列表 |
 | POST | `/labs` | 创建实验室 |
+
+## v1.1 backend implementation notes
+
+- The current backend business endpoints return the unified `{code, message, data}` envelope for both success and common API errors.
+- List endpoints support `page` and `page_size` consistently. Device, reservation, repair report, and work order list endpoints also support the filters documented above.
+- Until the database model integration lands, the business layer uses an in-memory service boundary in `backend/app/services/business.py`. Endpoint handlers are intentionally thin so the service can be replaced by SQLAlchemy repositories without changing the REST contract.
+- Reservation creation and approval check approved-reservation time conflicts for the same device and return `40900` on conflicts.
+- Work order creation marks the linked repair report as `assigned`; finishing a work order marks the linked repair report as `closed`.

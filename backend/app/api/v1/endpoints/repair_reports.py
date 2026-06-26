@@ -1,32 +1,14 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
-from app.db.session import get_db
 from app.schemas.auth import CurrentUser
-from app.schemas.common import ApiResponse, PageData, ok, utc_now
+from app.schemas.common import ApiResponse, PageData, ok
 from app.schemas.repair_report import RepairReportCreate, RepairReportRead, RepairReportStatus
+from app.services.business import labops_service
 
 router = APIRouter()
-
-DEMO_REPAIR_REPORT_ID = UUID("30000000-0000-0000-0000-000000000001")
-DEMO_DEVICE_ID = UUID("10000000-0000-0000-0000-000000000001")
-
-
-def demo_repair_report(report_id: UUID = DEMO_REPAIR_REPORT_ID) -> RepairReportRead:
-    now = utc_now()
-    return RepairReportRead(
-        id=report_id,
-        device_id=DEMO_DEVICE_ID,
-        reporter_id=UUID("00000000-0000-0000-0000-000000000001"),
-        fault_type="hardware",
-        description="设备启动后异常震动",
-        status=RepairReportStatus.submitted,
-        created_at=now,
-        updated_at=now,
-    )
 
 
 @router.get("", response_model=ApiResponse[PageData[RepairReportRead]])
@@ -36,34 +18,28 @@ def list_repair_reports(
     device_id: UUID | None = None,
     reporter_id: UUID | None = None,
     status: RepairReportStatus | None = None,
-    fault_type: str | None = None,
-    db: Session = Depends(get_db),
+    fault_type: str | None = Query(default=None, max_length=64),
 ) -> ApiResponse[PageData[RepairReportRead]]:
-    _ = (device_id, reporter_id, status, fault_type, db)
-    return ok(PageData(items=[demo_repair_report()], page=page, page_size=page_size, total=1))
+    return ok(
+        labops_service.list_repair_reports(
+            page=page,
+            page_size=page_size,
+            device_id=device_id,
+            reporter_id=reporter_id,
+            status=status,
+            fault_type=fault_type,
+        )
+    )
 
 
 @router.post("", response_model=ApiResponse[RepairReportRead], status_code=201)
 def create_repair_report(
     payload: RepairReportCreate,
     current_user: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ) -> ApiResponse[RepairReportRead]:
-    _ = db
-    now = utc_now()
-    return ok(
-        RepairReportRead(
-            id=DEMO_REPAIR_REPORT_ID,
-            reporter_id=current_user.id,
-            status=RepairReportStatus.submitted,
-            created_at=now,
-            updated_at=now,
-            **payload.model_dump(),
-        )
-    )
+    return ok(labops_service.create_repair_report(payload, current_user.id))
 
 
 @router.get("/{report_id}", response_model=ApiResponse[RepairReportRead])
-def get_repair_report(report_id: UUID, db: Session = Depends(get_db)) -> ApiResponse[RepairReportRead]:
-    _ = db
-    return ok(demo_repair_report(report_id))
+def get_repair_report(report_id: UUID) -> ApiResponse[RepairReportRead]:
+    return ok(labops_service.get_repair_report(report_id))

@@ -1,10 +1,8 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Query
 
-from app.db.session import get_db
-from app.schemas.common import ApiResponse, PageData, ok, utc_now
+from app.schemas.common import ApiResponse, PageData, ok
 from app.schemas.work_order import (
     WorkOrderCreate,
     WorkOrderFinish,
@@ -13,27 +11,9 @@ from app.schemas.work_order import (
     WorkOrderStatus,
     WorkOrderStatusUpdate,
 )
+from app.services.business import labops_service
 
 router = APIRouter()
-
-DEMO_WORK_ORDER_ID = UUID("40000000-0000-0000-0000-000000000001")
-DEMO_REPAIR_REPORT_ID = UUID("30000000-0000-0000-0000-000000000001")
-
-
-def demo_work_order(work_order_id: UUID = DEMO_WORK_ORDER_ID) -> WorkOrderRead:
-    now = utc_now()
-    return WorkOrderRead(
-        id=work_order_id,
-        repair_report_id=DEMO_REPAIR_REPORT_ID,
-        assignee_id=UUID("00000000-0000-0000-0000-000000000001"),
-        priority=WorkOrderPriority.high,
-        status=WorkOrderStatus.pending,
-        result=None,
-        started_at=None,
-        finished_at=None,
-        created_at=now,
-        updated_at=now,
-    )
 
 
 @router.get("", response_model=ApiResponse[PageData[WorkOrderRead]])
@@ -43,62 +23,33 @@ def list_work_orders(
     assignee_id: UUID | None = None,
     status: WorkOrderStatus | None = None,
     priority: WorkOrderPriority | None = None,
-    db: Session = Depends(get_db),
 ) -> ApiResponse[PageData[WorkOrderRead]]:
-    _ = (assignee_id, status, priority, db)
-    return ok(PageData(items=[demo_work_order()], page=page, page_size=page_size, total=1))
+    return ok(
+        labops_service.list_work_orders(
+            page=page,
+            page_size=page_size,
+            assignee_id=assignee_id,
+            status=status,
+            priority=priority,
+        )
+    )
 
 
 @router.post("", response_model=ApiResponse[WorkOrderRead], status_code=201)
-def create_work_order(payload: WorkOrderCreate, db: Session = Depends(get_db)) -> ApiResponse[WorkOrderRead]:
-    _ = db
-    now = utc_now()
-    return ok(
-        WorkOrderRead(
-            id=DEMO_WORK_ORDER_ID,
-            status=WorkOrderStatus.pending,
-            result=None,
-            started_at=None,
-            finished_at=None,
-            created_at=now,
-            updated_at=now,
-            **payload.model_dump(),
-        )
-    )
+def create_work_order(payload: WorkOrderCreate) -> ApiResponse[WorkOrderRead]:
+    return ok(labops_service.create_work_order(payload))
 
 
 @router.get("/{work_order_id}", response_model=ApiResponse[WorkOrderRead])
-def get_work_order(work_order_id: UUID, db: Session = Depends(get_db)) -> ApiResponse[WorkOrderRead]:
-    _ = db
-    return ok(demo_work_order(work_order_id))
+def get_work_order(work_order_id: UUID) -> ApiResponse[WorkOrderRead]:
+    return ok(labops_service.get_work_order(work_order_id))
 
 
 @router.patch("/{work_order_id}/status", response_model=ApiResponse[WorkOrderRead])
-def update_work_order_status(
-    work_order_id: UUID,
-    payload: WorkOrderStatusUpdate,
-    db: Session = Depends(get_db),
-) -> ApiResponse[WorkOrderRead]:
-    _ = db
-    started_at = utc_now() if payload.status == WorkOrderStatus.processing else None
-    return ok(demo_work_order(work_order_id).model_copy(update={"status": payload.status, "started_at": started_at, "updated_at": utc_now()}))
+def update_work_order_status(work_order_id: UUID, payload: WorkOrderStatusUpdate) -> ApiResponse[WorkOrderRead]:
+    return ok(labops_service.update_work_order_status(work_order_id, payload.status))
 
 
 @router.post("/{work_order_id}/finish", response_model=ApiResponse[WorkOrderRead])
-def finish_work_order(
-    work_order_id: UUID,
-    payload: WorkOrderFinish,
-    db: Session = Depends(get_db),
-) -> ApiResponse[WorkOrderRead]:
-    _ = db
-    now = utc_now()
-    return ok(
-        demo_work_order(work_order_id).model_copy(
-            update={
-                "status": WorkOrderStatus.finished,
-                "result": payload.result,
-                "finished_at": now,
-                "updated_at": now,
-            }
-        )
-    )
+def finish_work_order(work_order_id: UUID, payload: WorkOrderFinish) -> ApiResponse[WorkOrderRead]:
+    return ok(labops_service.finish_work_order(work_order_id, payload.result))
