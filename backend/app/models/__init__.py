@@ -1,9 +1,33 @@
-"""SQLAlchemy model exports.
-
-Concrete models will be added in the next backend iteration based on
-docs/05-database-design.md.
-"""
-
 from app.db.base import Base
+from app.models.domain import (
+    Device,
+    DeviceCategory,
+    Lab,
+    MaintenanceRecord,
+    OperationMetric,
+    Permission,
+    RepairReport,
+    Reservation,
+    Role,
+    RolePermission,
+    User,
+    UserRole,
+    WorkOrder,
+)
 
-__all__ = ["Base"]
+__all__ = [
+    "Base",
+    "Device",
+    "DeviceCategory",
+    "Lab",
+    "MaintenanceRecord",
+    "OperationMetric",
+    "Permission",
+    "RepairReport",
+    "Reservation",
+    "Role",
+    "RolePermission",
+    "User",
+    "UserRole",
+    "WorkOrder",
+]
