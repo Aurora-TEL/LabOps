@@ -71,6 +71,26 @@ export const workbenchData: WorkbenchData = {
       status: '已确认'
     }
   ],
+  repairReports: [
+    {
+      id: 'REP-20260626-014',
+      device: '五轴加工中心',
+      faultType: 'hardware',
+      description: '主轴振动值超过预警阈值',
+      reporter: '周若琳',
+      status: '已派单',
+      createdAt: '08:20'
+    },
+    {
+      id: 'REP-20260626-015',
+      device: '自动化装配线',
+      faultType: 'network',
+      description: '扫码枪间歇性断连，影响入库确认',
+      reporter: '陈启明',
+      status: '已提交',
+      createdAt: '10:05'
+    }
+  ],
   repairOrders: [
     {
       id: 'WO-20260626-019',

@@ -13,6 +13,7 @@ export interface PageData<T> {
 
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
 const API_BASE_URL = (configuredBaseUrl || '/api/v1').replace(/\/$/, '');
+const TOKEN_STORAGE_KEY = 'labops_access_token';
 
 export class ApiError extends Error {
   constructor(
@@ -24,10 +25,24 @@ export class ApiError extends Error {
   }
 }
 
+export function getStoredToken() {
+  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function setStoredToken(token: string) {
+  window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+}
+
+export function clearStoredToken() {
+  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
 export async function requestApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getStoredToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       Accept: 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers
     },
     ...init

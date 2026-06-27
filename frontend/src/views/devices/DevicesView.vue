@@ -1,12 +1,34 @@
 <script setup lang="ts">
-import { Cpu, Filter, Plus } from 'lucide-vue-next';
+import { Cpu, Plus, RefreshCw } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
+import { reactive, ref } from 'vue';
 
 import DataState from '@/components/common/DataState.vue';
 import StatusPill from '@/components/common/StatusPill.vue';
 import { useOperationsStore } from '@/stores/operations';
+import type { BackendDeviceStatus } from '@/api/operations';
 
-const { data, loading, error, source } = storeToRefs(useOperationsStore());
+const store = useOperationsStore();
+const { data, loading, error, success, source, actionLoading } = storeToRefs(store);
+const showForm = ref(false);
+const form = reactive({
+  code: `DEV-${Math.floor(Math.random() * 900 + 100)}`,
+  name: '演示设备',
+  status: 'available' as BackendDeviceStatus,
+  health_score: 88,
+  purchase_date: new Date().toISOString().slice(0, 10)
+});
+
+async function submitDevice() {
+  await store.createDevice({
+    code: form.code,
+    name: form.name,
+    status: form.status,
+    health_score: form.health_score,
+    purchase_date: form.purchase_date || null
+  });
+  showForm.value = false;
+}
 </script>
 
 <template>
@@ -15,15 +37,36 @@ const { data, loading, error, source } = storeToRefs(useOperationsStore());
       <div>
         <p class="eyebrow">设备台账</p>
         <h1>设备状态与维护计划</h1>
-        <p class="subtle">展示设备运行、利用率、温度和下次保养时间，后续可接入实时采集数据。</p>
+        <p class="subtle">展示设备运行、利用率、温度和下次保养时间，支持演示级创建和状态切换。</p>
       </div>
       <div class="toolbar">
         <span class="source-badge">{{ source === 'api' ? '后端接口' : '演示数据' }}</span>
-        <button class="text-button" type="button"><Filter :size="17" />筛选</button>
-        <button class="text-button primary" type="button"><Plus :size="17" />新增设备</button>
+        <button class="text-button" type="button" :disabled="loading" @click="store.refresh"><RefreshCw :size="17" />刷新</button>
+        <button class="text-button primary" type="button" @click="showForm = !showForm"><Plus :size="17" />新增设备</button>
       </div>
     </section>
 
+    <section v-if="showForm" class="panel">
+      <form class="inline-form" @submit.prevent="submitDevice">
+        <label class="form-item">设备编号<input v-model.trim="form.code" required /></label>
+        <label class="form-item">设备名称<input v-model.trim="form.name" required /></label>
+        <label class="form-item">
+          初始状态
+          <select v-model="form.status">
+            <option value="available">可预约</option>
+            <option value="in_use">使用中</option>
+            <option value="maintenance">维护中</option>
+            <option value="disabled">停用</option>
+          </select>
+        </label>
+        <label class="form-item">健康分<input v-model.number="form.health_score" min="0" max="100" type="number" /></label>
+        <button class="text-button primary" type="submit" :disabled="actionLoading === 'device:create'">
+          {{ actionLoading === 'device:create' ? '提交中' : '保存' }}
+        </button>
+      </form>
+    </section>
+
+    <div v-if="success" class="success-state">{{ success }}</div>
     <DataState :loading="loading" :error="error" :empty="data.deviceStatuses.length === 0" empty-text="暂无设备台账" />
 
     <section class="device-grid">
@@ -40,6 +83,11 @@ const { data, loading, error, source } = storeToRefs(useOperationsStore());
           <div><strong>{{ device.nextMaintenance }}</strong><span>下次保养</span></div>
         </div>
         <div class="progress"><span :style="{ width: `${device.utilization}%` }"></span></div>
+        <div class="row-actions">
+          <button class="mini-button" type="button" :disabled="actionLoading === `device:${device.id}`" @click="store.setDeviceStatus(device, 'in_use')">运行</button>
+          <button class="mini-button" type="button" :disabled="actionLoading === `device:${device.id}`" @click="store.setDeviceStatus(device, 'maintenance')">维护</button>
+          <button class="mini-button" type="button" :disabled="actionLoading === `device:${device.id}`" @click="store.setDeviceStatus(device, 'available')">待机</button>
+        </div>
       </article>
     </section>
   </div>
@@ -108,6 +156,10 @@ const { data, loading, error, source } = storeToRefs(useOperationsStore());
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.row-actions {
+  margin-top: 14px;
 }
 
 @media (max-width: 1180px) {

@@ -1,11 +1,12 @@
 import { requestApi, type PageData } from '@/api/client';
 import { workbenchData } from '@/mock/operations';
-import type { DeviceStatus, Metric, ProductionRecord, RepairOrder, Reservation, WorkbenchData } from '@/types';
+import type { DeviceStatus, Metric, ProductionRecord, RepairOrder, RepairReport, Reservation, WorkbenchData } from '@/types';
 
-type BackendDeviceStatus = 'available' | 'reserved' | 'in_use' | 'maintenance' | 'disabled';
-type BackendReservationStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'completed';
-type BackendWorkOrderStatus = 'pending' | 'processing' | 'finished' | 'canceled';
-type BackendPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type BackendDeviceStatus = 'available' | 'reserved' | 'in_use' | 'maintenance' | 'disabled';
+export type BackendReservationStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'completed';
+export type BackendRepairReportStatus = 'submitted' | 'accepted' | 'assigned' | 'closed';
+export type BackendWorkOrderStatus = 'pending' | 'processing' | 'finished' | 'canceled';
+export type BackendPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 interface DashboardSummary {
   device_total: number;
@@ -20,7 +21,7 @@ interface TrendPoint {
   value: number;
 }
 
-interface BackendDevice {
+export interface BackendDevice {
   id: string;
   code: string;
   name: string;
@@ -29,7 +30,7 @@ interface BackendDevice {
   purchase_date?: string | null;
 }
 
-interface BackendReservation {
+export interface BackendReservation {
   id: string;
   device_id: string;
   applicant_id: string;
@@ -39,13 +40,56 @@ interface BackendReservation {
   status: BackendReservationStatus;
 }
 
-interface BackendWorkOrder {
+export interface BackendRepairReport {
+  id: string;
+  device_id: string;
+  reporter_id: string;
+  fault_type: string;
+  description: string;
+  status: BackendRepairReportStatus;
+  created_at: string;
+}
+
+export interface BackendWorkOrder {
   id: string;
   repair_report_id: string;
   assignee_id?: string | null;
   priority: BackendPriority;
   status: BackendWorkOrderStatus;
   created_at: string;
+}
+
+export interface CreateDevicePayload {
+  code: string;
+  name: string;
+  status: BackendDeviceStatus;
+  health_score?: number | null;
+  purchase_date?: string | null;
+}
+
+export interface CreateReservationPayload {
+  device_id: string;
+  start_time: string;
+  end_time: string;
+  purpose: string;
+}
+
+export interface CreateRepairReportPayload {
+  device_id: string;
+  fault_type: string;
+  description: string;
+}
+
+export interface CreateWorkOrderPayload {
+  repair_report_id: string;
+  priority: BackendPriority;
+  assignee_id?: string | null;
+}
+
+export interface WorkbenchLoadResult {
+  data: WorkbenchData;
+  source: 'api' | 'mock';
+  error?: string;
 }
 
 const deviceStatusMap: Record<BackendDeviceStatus, DeviceStatus['status']> = {
@@ -64,6 +108,13 @@ const reservationStatusMap: Record<BackendReservationStatus, Reservation['status
   completed: '已完成'
 };
 
+const repairReportStatusMap: Record<BackendRepairReportStatus, RepairReport['status']> = {
+  submitted: '已提交',
+  accepted: '已受理',
+  assigned: '已派单',
+  closed: '已关闭'
+};
+
 const workOrderStatusMap: Record<BackendWorkOrderStatus, RepairOrder['status']> = {
   pending: '待派工',
   processing: '处理中',
@@ -77,12 +128,6 @@ const priorityMap: Record<BackendPriority, RepairOrder['priority']> = {
   high: '高',
   urgent: '高'
 };
-
-export interface WorkbenchLoadResult {
-  data: WorkbenchData;
-  source: 'api' | 'mock';
-  error?: string;
-}
 
 function formatDateLabel(value: string) {
   const date = new Date(value);
@@ -107,6 +152,14 @@ function formatCreatedAt(value: string) {
   return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
+function shortId(prefix: string, id: string) {
+  return `${prefix}-${id.slice(0, 8)}`;
+}
+
+function findDeviceName(deviceId: string, devices: DeviceStatus[], fallback: string) {
+  return devices.find((candidate) => candidate.rawId === deviceId || candidate.id === deviceId || candidate.id.includes(deviceId.slice(0, 8)))?.name ?? fallback;
+}
+
 function buildMetrics(summary: DashboardSummary): Metric[] {
   const total = Math.max(summary.device_total, 1);
   const availability = ((summary.device_available / total) * 100).toFixed(1);
@@ -119,11 +172,12 @@ function buildMetrics(summary: DashboardSummary): Metric[] {
   ];
 }
 
-function mapDevice(item: BackendDevice, index: number): DeviceStatus {
+export function mapDevice(item: BackendDevice, index: number): DeviceStatus {
   const mock = workbenchData.deviceStatuses[index % workbenchData.deviceStatuses.length];
   const healthScore = item.health_score ?? mock.utilization;
 
   return {
+    rawId: item.id,
     id: item.code || item.id.slice(0, 8),
     name: item.name,
     workshop: mock.workshop,
@@ -134,13 +188,14 @@ function mapDevice(item: BackendDevice, index: number): DeviceStatus {
   };
 }
 
-function mapReservation(item: BackendReservation, index: number, devices: DeviceStatus[]): Reservation {
+export function mapReservation(item: BackendReservation, index: number, devices: DeviceStatus[]): Reservation {
   const mock = workbenchData.reservations[index % workbenchData.reservations.length];
-  const device = devices.find((candidate) => item.device_id.includes(candidate.id) || candidate.id.includes(item.device_id.slice(0, 8)));
 
   return {
-    id: `RSV-${item.id.slice(0, 8)}`,
-    device: device?.name ?? mock.device,
+    rawId: item.id,
+    rawDeviceId: item.device_id,
+    id: shortId('RSV', item.id),
+    device: findDeviceName(item.device_id, devices, mock.device),
     applicant: `用户 ${item.applicant_id.slice(0, 4)}`,
     department: mock.department,
     slot: formatTimeRange(item.start_time, item.end_time),
@@ -148,14 +203,33 @@ function mapReservation(item: BackendReservation, index: number, devices: Device
   };
 }
 
-function mapWorkOrder(item: BackendWorkOrder, index: number, devices: DeviceStatus[]): RepairOrder {
-  const mock = workbenchData.repairOrders[index % workbenchData.repairOrders.length];
-  const device = devices[index % Math.max(devices.length, 1)];
+export function mapRepairReport(item: BackendRepairReport, index: number, devices: DeviceStatus[]): RepairReport {
+  const mock = workbenchData.repairReports[index % workbenchData.repairReports.length] ?? workbenchData.repairReports[0];
 
   return {
-    id: `WO-${item.id.slice(0, 8)}`,
-    title: mock.title,
-    device: device?.name ?? mock.device,
+    rawId: item.id,
+    rawDeviceId: item.device_id,
+    id: shortId('REP', item.id),
+    device: findDeviceName(item.device_id, devices, mock?.device ?? '未知设备'),
+    faultType: item.fault_type,
+    description: item.description,
+    reporter: `用户 ${item.reporter_id.slice(0, 4)}`,
+    status: repairReportStatusMap[item.status] ?? '已提交',
+    createdAt: formatCreatedAt(item.created_at)
+  };
+}
+
+export function mapWorkOrder(item: BackendWorkOrder, index: number, devices: DeviceStatus[], repairReports: RepairReport[]): RepairOrder {
+  const mock = workbenchData.repairOrders[index % workbenchData.repairOrders.length];
+  const report = repairReports.find((candidate) => candidate.rawId === item.repair_report_id);
+  const device = report?.device ?? devices[index % Math.max(devices.length, 1)]?.name ?? mock.device;
+
+  return {
+    rawId: item.id,
+    rawRepairReportId: item.repair_report_id,
+    id: shortId('WO', item.id),
+    title: report?.description ?? mock.title,
+    device,
     priority: priorityMap[item.priority] ?? '中',
     assignee: item.assignee_id ? `工程师 ${item.assignee_id.slice(0, 4)}` : '待派工',
     createdAt: formatCreatedAt(item.created_at),
@@ -179,23 +253,26 @@ function mapProductionRecords(devices: DeviceStatus[]): ProductionRecord[] {
 }
 
 async function loadApiWorkbenchData(): Promise<WorkbenchData> {
-  const [summary, utilization, repairTrend, devicesPage, reservationsPage, workOrdersPage] = await Promise.all([
+  const [summary, utilization, repairTrend, devicesPage, reservationsPage, repairReportsPage, workOrdersPage] = await Promise.all([
     requestApi<DashboardSummary>('/dashboard/summary'),
     requestApi<TrendPoint[]>('/dashboard/device-utilization'),
     requestApi<TrendPoint[]>('/dashboard/repair-trend'),
     requestApi<PageData<BackendDevice>>('/devices?page_size=20'),
     requestApi<PageData<BackendReservation>>('/reservations?page_size=20'),
+    requestApi<PageData<BackendRepairReport>>('/repair-reports?page_size=20'),
     requestApi<PageData<BackendWorkOrder>>('/work-orders?page_size=20')
   ]);
 
   const deviceStatuses = devicesPage.items.map(mapDevice);
   const reservations = reservationsPage.items.map((item, index) => mapReservation(item, index, deviceStatuses));
-  const repairOrders = workOrdersPage.items.map((item, index) => mapWorkOrder(item, index, deviceStatuses));
+  const repairReports = repairReportsPage.items.map((item, index) => mapRepairReport(item, index, deviceStatuses));
+  const repairOrders = workOrdersPage.items.map((item, index) => mapWorkOrder(item, index, deviceStatuses, repairReports));
 
   return {
     metrics: buildMetrics(summary),
     deviceStatuses,
     reservations,
+    repairReports,
     repairOrders,
     weeklyUsage: utilization.map((item) => ({ name: formatDateLabel(item.date), value: Math.round(item.value) })),
     orderTrend: repairTrend.map((item) => ({ name: formatDateLabel(item.date), value: Math.round(item.value) })),
@@ -216,4 +293,76 @@ export async function getWorkbenchData(): Promise<WorkbenchLoadResult> {
       error: error instanceof Error ? error.message : '后端接口暂不可用，已切换演示数据'
     };
   }
+}
+
+export function createDevice(payload: CreateDevicePayload) {
+  return requestApi<BackendDevice>('/devices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateDeviceStatus(deviceId: string, status: BackendDeviceStatus, reason: string) {
+  return requestApi<BackendDevice>(`/devices/${deviceId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, reason })
+  });
+}
+
+export function createReservation(payload: CreateReservationPayload) {
+  return requestApi<BackendReservation>('/reservations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
+export function approveReservation(reservationId: string) {
+  return requestApi<BackendReservation>(`/reservations/${reservationId}/approve`, { method: 'POST' });
+}
+
+export function rejectReservation(reservationId: string, rejectReason: string) {
+  return requestApi<BackendReservation>(`/reservations/${reservationId}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reject_reason: rejectReason })
+  });
+}
+
+export function cancelReservation(reservationId: string) {
+  return requestApi<BackendReservation>(`/reservations/${reservationId}/cancel`, { method: 'POST' });
+}
+
+export function createRepairReport(payload: CreateRepairReportPayload) {
+  return requestApi<BackendRepairReport>('/repair-reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
+export function createWorkOrder(payload: CreateWorkOrderPayload) {
+  return requestApi<BackendWorkOrder>('/work-orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateWorkOrderStatus(workOrderId: string, status: BackendWorkOrderStatus) {
+  return requestApi<BackendWorkOrder>(`/work-orders/${workOrderId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
+  });
+}
+
+export function finishWorkOrder(workOrderId: string, result: string) {
+  return requestApi<BackendWorkOrder>(`/work-orders/${workOrderId}/finish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ result })
+  });
 }

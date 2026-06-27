@@ -257,6 +257,86 @@ h3 {
   font-weight: 800;
 }
 
+.success-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid #bde8d7;
+  border-radius: 8px;
+  background: #f0fbf6;
+  color: #087849;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.inline-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 16px;
+}
+
+.inline-form.compact {
+  grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
+}
+
+.form-item {
+  display: grid;
+  gap: 7px;
+  color: #40516a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.form-item input,
+.form-item select,
+.form-item textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #243249;
+  padding: 8px 10px;
+  outline: 0;
+  resize: vertical;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mini-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #304057;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mini-button.primary {
+  border-color: transparent;
+  color: #fff;
+}
+
+.mini-button:disabled,
+.text-button:disabled,
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -294,5 +374,10 @@ h3 {
 
   .table-wrap {
     overflow-x: auto;
+  }
+
+  .inline-form,
+  .inline-form.compact {
+    grid-template-columns: 1fr;
   }
 }

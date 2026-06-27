@@ -6,6 +6,7 @@ import {
   Factory,
   Gauge,
   LayoutDashboard,
+  LogOut,
   Menu,
   MonitorCog,
   Search,
@@ -13,13 +14,16 @@ import {
   Wrench
 } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
+import { useAuthStore } from '@/stores/auth';
 import { useOperationsStore } from '@/stores/operations';
 
 const route = useRoute();
+const router = useRouter();
 const collapsed = ref(false);
 const operationsStore = useOperationsStore();
+const authStore = useAuthStore();
 
 const navItems = [
   { label: '运营首页', path: '/dashboard', icon: LayoutDashboard },
@@ -31,8 +35,17 @@ const navItems = [
 ];
 
 const title = computed(() => String(route.meta.title ?? '运营首页'));
+const avatarText = computed(() => authStore.displayName.slice(0, 1));
+
+async function signOut() {
+  await authStore.signOut();
+  await router.replace('/login');
+}
 
 onMounted(() => {
+  if (!authStore.initialized) {
+    void authStore.loadCurrentUser();
+  }
   if (!operationsStore.loaded) {
     void operationsStore.load();
   }
@@ -87,12 +100,15 @@ onMounted(() => {
             <Bell :size="19" />
           </button>
           <div class="user-chip">
-            <span>运</span>
+            <span>{{ avatarText }}</span>
             <div>
-              <strong>运营管理员</strong>
-              <small>制造工程部</small>
+              <strong>{{ authStore.displayName }}</strong>
+              <small>{{ authStore.roleLabel }}</small>
             </div>
           </div>
+          <button class="icon-button" type="button" title="退出登录" @click="signOut">
+            <LogOut :size="18" />
+          </button>
         </div>
       </header>
 

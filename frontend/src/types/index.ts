@@ -10,6 +10,7 @@ export interface Metric {
 }
 
 export interface DeviceStatus {
+  rawId?: string;
   id: string;
   name: string;
   workshop: string;
@@ -20,6 +21,8 @@ export interface DeviceStatus {
 }
 
 export interface Reservation {
+  rawId?: string;
+  rawDeviceId?: string;
   id: string;
   device: string;
   applicant: string;
@@ -29,6 +32,8 @@ export interface Reservation {
 }
 
 export interface RepairOrder {
+  rawId?: string;
+  rawRepairReportId?: string;
   id: string;
   title: string;
   device: string;
@@ -36,6 +41,18 @@ export interface RepairOrder {
   assignee: string;
   createdAt: string;
   status: '待派工' | '处理中' | '待验收' | '已关闭';
+}
+
+export interface RepairReport {
+  rawId?: string;
+  rawDeviceId?: string;
+  id: string;
+  device: string;
+  faultType: string;
+  description: string;
+  reporter: string;
+  status: '已提交' | '已受理' | '已派单' | '已关闭';
+  createdAt: string;
 }
 
 export interface ChartPoint {
@@ -55,6 +72,7 @@ export interface WorkbenchData {
   metrics: Metric[];
   deviceStatuses: DeviceStatus[];
   reservations: Reservation[];
+  repairReports: RepairReport[];
   repairOrders: RepairOrder[];
   weeklyUsage: ChartPoint[];
   orderTrend: ChartPoint[];

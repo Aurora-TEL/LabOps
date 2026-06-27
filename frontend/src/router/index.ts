@@ -1,10 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
 import AppLayout from '@/layouts/AppLayout.vue';
+import { useAuthStore } from '@/stores/auth';
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/views/auth/LoginView.vue'),
+      meta: { public: true, title: '登录' }
+    },
     {
       path: '/',
       component: AppLayout,
@@ -49,6 +56,24 @@ const router = createRouter({
       ]
     }
   ]
+});
+
+router.beforeEach(async (to) => {
+  const authStore = useAuthStore();
+  if (!authStore.initialized) {
+    await authStore.loadCurrentUser();
+  }
+
+  if (to.meta.public) {
+    if (to.name === 'login' && authStore.isAuthenticated) return '/dashboard';
+    return true;
+  }
+
+  if (!authStore.isAuthenticated) {
+    return { path: '/login', query: { redirect: to.fullPath } };
+  }
+
+  return true;
 });
 
 export default router;
