@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.models import (
+    AuditLog,
     Device,
     DeviceCategory,
     Lab,
     MaintenanceRecord,
+    Notification,
     OperationMetric,
     Permission,
     RepairReport,
@@ -83,6 +85,9 @@ def seed_security(db: Session) -> dict[str, uuid.UUID]:
         "work_order:create",
         "work_order:update",
         "work_order:close",
+        "notification:view",
+        "notification:update",
+        "audit_log:view",
         "user:manage",
         "role:manage",
         "dictionary:manage",
@@ -181,7 +186,17 @@ def seed_security(db: Session) -> dict[str, uuid.UUID]:
         ["user_id", "role_id"],
     )
     role_permission_map = {
-        "ordinary_user": ["dashboard:view", "device:view", "reservation:view_self", "reservation:create", "reservation:cancel_self", "repair:view_self", "repair:create"],
+        "ordinary_user": [
+            "dashboard:view",
+            "device:view",
+            "reservation:view_self",
+            "reservation:create",
+            "reservation:cancel_self",
+            "repair:view_self",
+            "repair:create",
+            "notification:view",
+            "notification:update",
+        ],
         "device_owner": [
             "dashboard:view",
             "analytics:view",
@@ -195,9 +210,30 @@ def seed_security(db: Session) -> dict[str, uuid.UUID]:
             "work_order:create",
             "work_order:update",
             "work_order:close",
+            "notification:view",
+            "notification:update",
         ],
-        "student": ["dashboard:view", "device:view", "reservation:view_self", "reservation:create", "reservation:cancel_self", "repair:view_self", "repair:create"],
-        "teacher": ["dashboard:view", "analytics:view", "device:view", "reservation:view_all", "reservation:approve", "repair:view_all"],
+        "student": [
+            "dashboard:view",
+            "device:view",
+            "reservation:view_self",
+            "reservation:create",
+            "reservation:cancel_self",
+            "repair:view_self",
+            "repair:create",
+            "notification:view",
+            "notification:update",
+        ],
+        "teacher": [
+            "dashboard:view",
+            "analytics:view",
+            "device:view",
+            "reservation:view_all",
+            "reservation:approve",
+            "repair:view_all",
+            "notification:view",
+            "notification:update",
+        ],
         "lab_admin": [code for code in permission_codes if not code.startswith(("user:", "role:"))],
         "system_admin": permission_codes,
     }
@@ -435,10 +471,107 @@ def seed_business(db: Session, user_ids: dict[str, uuid.UUID], lab_ids: dict[str
     upsert_by_id(db, OperationMetric, metric_rows)
 
 
+def seed_notifications_and_audit(db: Session, user_ids: dict[str, uuid.UUID], device_ids: dict[str, uuid.UUID]) -> None:
+    now = datetime.now(UTC).replace(microsecond=0)
+    notification_rows = [
+        {
+            "id": stable_uuid("notification:ordinary:reservation-approved"),
+            "recipient_id": user_ids["ordinary01"],
+            "title": "预约已通过",
+            "content": "3D Printer A01 明日 10:00-12:00 的预约已由设备负责人审核通过。",
+            "category": "success",
+            "business_type": "reservation",
+            "business_id": stable_uuid("reservation:RSV-20260626-001"),
+            "is_read": False,
+            "read_at": None,
+        },
+        {
+            "id": stable_uuid("notification:ordinary:repair-processing"),
+            "recipient_id": user_ids["ordinary01"],
+            "title": "报修处理中",
+            "content": "Network Analyzer NET-01 的网络故障已进入处理流程。",
+            "category": "info",
+            "business_type": "repair",
+            "business_id": stable_uuid("repair:REP-20260626-002"),
+            "is_read": False,
+            "read_at": None,
+        },
+        {
+            "id": stable_uuid("notification:owner:pending-reservation"),
+            "recipient_id": user_ids["owner01"],
+            "title": "待审核预约",
+            "content": "普通用户提交了 Desktop CNC C01 的新预约，请及时审核。",
+            "category": "warning",
+            "business_type": "reservation",
+            "business_id": stable_uuid("reservation:RSV-20260626-004"),
+            "is_read": False,
+            "read_at": None,
+        },
+        {
+            "id": stable_uuid("notification:owner:work-order"),
+            "recipient_id": user_ids["owner01"],
+            "title": "工单已创建",
+            "content": "Laser Cutter L01 的维修工单已归档，可在负责人工作台查看闭环记录。",
+            "category": "success",
+            "business_type": "work_order",
+            "business_id": stable_uuid("work-order:WO-20260626-003"),
+            "is_read": True,
+            "read_at": now - timedelta(hours=2),
+        },
+        {
+            "id": stable_uuid("notification:admin:system"),
+            "recipient_id": user_ids["admin"],
+            "title": "系统审计已开启",
+            "content": "v1.4 已启用通知中心和操作日志，预约、报修、工单动作将写入审计。",
+            "category": "info",
+            "business_type": "system",
+            "business_id": None,
+            "is_read": False,
+            "read_at": None,
+        },
+    ]
+    upsert_by_id(db, Notification, notification_rows)
+
+    audit_rows = [
+        {
+            "id": stable_uuid("audit:reservation-approved"),
+            "actor_id": user_ids["owner01"],
+            "action": "reservation.approve",
+            "resource_type": "reservation",
+            "resource_id": stable_uuid("reservation:RSV-20260626-001"),
+            "summary": "设备负责人通过预约申请",
+            "detail": "3D Printer A01 预约审核通过，并通知申请人。",
+            "result": "success",
+        },
+        {
+            "id": stable_uuid("audit:repair-created"),
+            "actor_id": user_ids["ordinary01"],
+            "action": "repair.create",
+            "resource_type": "repair_report",
+            "resource_id": stable_uuid("repair:REP-20260626-002"),
+            "summary": "普通用户提交设备报修",
+            "detail": "Network Analyzer NET-01 网络故障进入维修流程。",
+            "result": "success",
+        },
+        {
+            "id": stable_uuid("audit:work-order-closed"),
+            "actor_id": user_ids["owner01"],
+            "action": "work_order.close",
+            "resource_type": "work_order",
+            "resource_id": stable_uuid("work-order:WO-20260626-003"),
+            "summary": "负责人关闭维修工单",
+            "detail": f"设备 {device_ids['DEV-LAS-L01']} 已恢复，维修闭环完成。",
+            "result": "success",
+        },
+    ]
+    upsert_by_id(db, AuditLog, audit_rows)
+
+
 def seed(db: Session) -> None:
     user_ids = seed_security(db)
     lab_ids, device_ids = seed_assets(db, user_ids)
     seed_business(db, user_ids, lab_ids, device_ids)
+    seed_notifications_and_audit(db, user_ids, device_ids)
 
 
 def main() -> None:

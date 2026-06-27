@@ -16,6 +16,7 @@ from app.schemas.device import DeviceCreate, DeviceRead, DeviceStatus, DeviceUpd
 from app.schemas.repair_report import RepairReportCreate, RepairReportRead, RepairReportStatus
 from app.schemas.reservation import ReservationCreate, ReservationRead, ReservationStatus
 from app.schemas.work_order import WorkOrderCreate, WorkOrderPriority, WorkOrderRead, WorkOrderStatus
+from app.services.notification import notification_audit_service
 
 
 def _not_found(resource: str) -> HTTPException:
@@ -204,7 +205,7 @@ class LabOpsService:
         )
 
     def create_reservation(self, db: Session, payload: ReservationCreate, applicant_id: UUID) -> ReservationRead:
-        self._device(db, payload.device_id)
+        device = self._device(db, payload.device_id)
         self._ensure_no_reservation_conflict(db, payload.device_id, payload.start_time, payload.end_time)
         applicant = self._actor_user_id(db, applicant_id)
         reservation = Reservation(
@@ -218,6 +219,24 @@ class LabOpsService:
             status="pending",
         )
         db.add(reservation)
+        db.flush()
+        notification_audit_service.notify_users(
+            db,
+            [device.manager_id],
+            title="新的预约待审核",
+            content=f"{device.name} 收到新的预约申请，请及时审核。",
+            category="warning",
+            business_type="reservation",
+            business_id=reservation.id,
+        )
+        notification_audit_service.audit(
+            db,
+            action="reservation.create",
+            resource_type="reservation",
+            resource_id=reservation.id,
+            actor_id=applicant,
+            summary=f"提交 {device.name} 预约申请",
+        )
         self._commit(db)
         db.refresh(reservation)
         return self._reservation_read(reservation)
@@ -234,6 +253,23 @@ class LabOpsService:
         reservation.approver_id = self._actor_user_id(db, approver_id)
         reservation.reject_reason = None
         reservation.approved_at = utc_now()
+        notification_audit_service.notify_users(
+            db,
+            [reservation.applicant_id],
+            title="预约已通过",
+            content="您的设备预约已审核通过，请按预约时段使用设备。",
+            category="success",
+            business_type="reservation",
+            business_id=reservation.id,
+        )
+        notification_audit_service.audit(
+            db,
+            action="reservation.approve",
+            resource_type="reservation",
+            resource_id=reservation.id,
+            actor_id=reservation.approver_id,
+            summary="预约审核通过",
+        )
         self._commit(db)
         db.refresh(reservation)
         return self._reservation_read(reservation)
@@ -243,14 +279,49 @@ class LabOpsService:
         reservation.status = "rejected"
         reservation.approver_id = self._actor_user_id(db, approver_id)
         reservation.reject_reason = reject_reason
+        notification_audit_service.notify_users(
+            db,
+            [reservation.applicant_id],
+            title="预约已驳回",
+            content=f"您的设备预约未通过审核，原因：{reject_reason}",
+            category="error",
+            business_type="reservation",
+            business_id=reservation.id,
+        )
+        notification_audit_service.audit(
+            db,
+            action="reservation.reject",
+            resource_type="reservation",
+            resource_id=reservation.id,
+            actor_id=reservation.approver_id,
+            summary="预约审核驳回",
+            detail=reject_reason,
+        )
         self._commit(db)
         db.refresh(reservation)
         return self._reservation_read(reservation)
 
-    def cancel_reservation(self, db: Session, reservation_id: UUID) -> ReservationRead:
+    def cancel_reservation(self, db: Session, reservation_id: UUID, actor_id: UUID | None = None) -> ReservationRead:
         reservation = self._reservation(db, reservation_id)
         reservation.status = "cancelled"
         reservation.cancelled_at = utc_now()
+        notification_audit_service.notify_device_manager(
+            db,
+            reservation.device_id,
+            title="预约已取消",
+            content="一条设备预约已取消，设备时段重新释放。",
+            category="info",
+            business_type="reservation",
+            business_id=reservation.id,
+        )
+        notification_audit_service.audit(
+            db,
+            action="reservation.cancel",
+            resource_type="reservation",
+            resource_id=reservation.id,
+            actor_id=actor_id,
+            summary="取消预约",
+        )
         self._commit(db)
         db.refresh(reservation)
         return self._reservation_read(reservation)
@@ -288,7 +359,7 @@ class LabOpsService:
         )
 
     def create_repair_report(self, db: Session, payload: RepairReportCreate, reporter_id: UUID) -> RepairReportRead:
-        self._device(db, payload.device_id)
+        device = self._device(db, payload.device_id)
         report = RepairReport(
             report_no=self._number("REP"),
             device_id=payload.device_id,
@@ -299,6 +370,33 @@ class LabOpsService:
             status="submitted",
         )
         db.add(report)
+        db.flush()
+        notification_audit_service.notify_users(
+            db,
+            [device.manager_id],
+            title="新的设备报修",
+            content=f"{device.name} 收到新的{payload.fault_type}报修，请安排处理。",
+            category="warning",
+            business_type="repair",
+            business_id=report.id,
+        )
+        notification_audit_service.notify_admins(
+            db,
+            title="新的设备报修",
+            content=f"{device.name} 收到新的报修记录。",
+            category="info",
+            business_type="repair",
+            business_id=report.id,
+        )
+        notification_audit_service.audit(
+            db,
+            action="repair.create",
+            resource_type="repair_report",
+            resource_id=report.id,
+            actor_id=report.reporter_id,
+            summary=f"提交 {device.name} 报修",
+            detail=payload.description,
+        )
         self._commit(db)
         db.refresh(report)
         return self._repair_read(report)
@@ -349,6 +447,24 @@ class LabOpsService:
         report.status = "assigned"
         report.accepted_at = report.accepted_at or utc_now()
         db.add(work_order)
+        db.flush()
+        notification_audit_service.notify_users(
+            db,
+            [work_order.assignee_id, report.reporter_id],
+            title="维修工单已创建",
+            content="报修记录已生成维修工单，请关注处理进度。",
+            category="info",
+            business_type="work_order",
+            business_id=work_order.id,
+        )
+        notification_audit_service.audit(
+            db,
+            action="work_order.create",
+            resource_type="work_order",
+            resource_id=work_order.id,
+            actor_id=work_order.creator_id,
+            summary="创建维修工单",
+        )
         self._commit(db)
         db.refresh(work_order)
         return self._work_order_read(work_order)
@@ -370,6 +486,23 @@ class LabOpsService:
         if new_status == "closed":
             work_order.closed_at = now
             self._close_repair_report(db, work_order.repair_report_id, work_order.result)
+        notification_audit_service.notify_users(
+            db,
+            [work_order.assignee_id],
+            title="工单状态已更新",
+            content=f"工单 {work_order.work_order_no} 状态更新为 {new_status}。",
+            category="info",
+            business_type="work_order",
+            business_id=work_order.id,
+        )
+        notification_audit_service.audit(
+            db,
+            action=f"work_order.{new_status}",
+            resource_type="work_order",
+            resource_id=work_order.id,
+            actor_id=work_order.assignee_id,
+            summary=f"更新工单状态为 {new_status}",
+        )
         self._commit(db)
         db.refresh(work_order)
         return self._work_order_read(work_order)
@@ -381,6 +514,25 @@ class LabOpsService:
         work_order.result = result
         work_order.finished_at = now
         self._close_repair_report(db, work_order.repair_report_id, result)
+        report = self._repair_report(db, work_order.repair_report_id)
+        notification_audit_service.notify_users(
+            db,
+            [work_order.assignee_id, report.reporter_id],
+            title="维修工单已完成",
+            content=f"工单 {work_order.work_order_no} 已完成：{result}",
+            category="success",
+            business_type="work_order",
+            business_id=work_order.id,
+        )
+        notification_audit_service.audit(
+            db,
+            action="work_order.finish",
+            resource_type="work_order",
+            resource_id=work_order.id,
+            actor_id=work_order.assignee_id,
+            summary="完成维修工单",
+            detail=result,
+        )
         self._commit(db)
         db.refresh(work_order)
         return self._work_order_read(work_order)

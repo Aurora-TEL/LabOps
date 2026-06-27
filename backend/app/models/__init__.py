@@ -1,9 +1,11 @@
 from app.db.base import Base
 from app.models.domain import (
+    AuditLog,
     Device,
     DeviceCategory,
     Lab,
     MaintenanceRecord,
+    Notification,
     OperationMetric,
     Permission,
     RepairReport,
@@ -17,10 +19,12 @@ from app.models.domain import (
 
 __all__ = [
     "Base",
+    "AuditLog",
     "Device",
     "DeviceCategory",
     "Lab",
     "MaintenanceRecord",
+    "Notification",
     "OperationMetric",
     "Permission",
     "RepairReport",

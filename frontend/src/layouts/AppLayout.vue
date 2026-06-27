@@ -17,13 +17,17 @@ import {
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import NotificationPanel from '@/components/common/NotificationPanel.vue';
 import { useAuthStore } from '@/stores/auth';
+import { useNotificationsStore } from '@/stores/notifications';
 import { useOperationsStore } from '@/stores/operations';
 
 const route = useRoute();
 const router = useRouter();
 const collapsed = ref(false);
+const notificationOpen = ref(false);
 const operationsStore = useOperationsStore();
+const notificationsStore = useNotificationsStore();
 const authStore = useAuthStore();
 
 const allNavItems = [
@@ -50,6 +54,7 @@ const navItems = computed(() =>
 );
 const title = computed(() => String(route.meta.title ?? '运营首页'));
 const avatarText = computed(() => authStore.displayName.slice(0, 1));
+const unreadCount = computed(() => notificationsStore.unreadCount);
 const shellLabel = computed(() => {
   if (authStore.isDeviceOwner && !authStore.isAdminUser) return '设备运维中心';
   if (authStore.isOrdinaryUser && !authStore.isAdminUser) return '实验预约自助台';
@@ -61,12 +66,22 @@ async function signOut() {
   await router.replace('/login');
 }
 
+function toggleNotifications() {
+  notificationOpen.value = !notificationOpen.value;
+  if (!notificationsStore.loaded) {
+    void notificationsStore.load();
+  }
+}
+
 onMounted(() => {
   if (!authStore.initialized) {
     void authStore.loadCurrentUser();
   }
   if (!operationsStore.loaded) {
     void operationsStore.load();
+  }
+  if (!notificationsStore.loaded) {
+    void notificationsStore.load();
   }
 });
 </script>
@@ -115,9 +130,13 @@ onMounted(() => {
             <Search :size="18" />
             <input placeholder="搜索设备、预约、工单" />
           </label>
-          <button class="icon-button" type="button" title="消息通知">
-            <Bell :size="19" />
-          </button>
+          <div class="notification-anchor">
+            <button class="icon-button" type="button" title="消息通知" @click="toggleNotifications">
+              <Bell :size="19" />
+              <span v-if="unreadCount" class="notification-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+            </button>
+            <NotificationPanel :open="notificationOpen" @close="notificationOpen = false" />
+          </div>
           <div class="user-chip">
             <span>{{ avatarText }}</span>
             <div>
@@ -304,6 +323,26 @@ onMounted(() => {
   border: 0;
   outline: 0;
   color: #243249;
+}
+
+.notification-anchor {
+  position: relative;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #f05a4f;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 14px;
+  text-align: center;
 }
 
 .user-chip {

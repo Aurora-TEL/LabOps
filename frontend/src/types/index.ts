@@ -78,3 +78,30 @@ export interface WorkbenchData {
   orderTrend: ChartPoint[];
   productionRecords: ProductionRecord[];
 }
+
+export type NotificationType = 'reservation' | 'repair' | 'work_order' | 'system';
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  content: string;
+  type: NotificationType;
+  createdAt: string;
+  read: boolean;
+  link?: string;
+}
+
+export interface RecentOperation {
+  id: string;
+  actor: string;
+  action: string;
+  target: string;
+  detail: string;
+  createdAt: string;
+  status: 'success' | 'warning' | 'failed';
+}
+
+export interface NotificationCenterData {
+  notifications: NotificationItem[];
+  recentOperations: RecentOperation[];
+}

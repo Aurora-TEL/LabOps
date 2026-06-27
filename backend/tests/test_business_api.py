@@ -215,3 +215,35 @@ def test_device_owner_cannot_manage_non_owned_workflow() -> None:
         headers=auth_headers("owner01"),
     )
     assert order_response.status_code == 403
+
+
+def test_notifications_and_audit_log_flow() -> None:
+    device = device_by_keyword("3D Printer", "admin")
+    start = datetime.now(timezone.utc) + timedelta(days=28, minutes=uuid4().int % 1000)
+    payload = {
+        "device_id": device["id"],
+        "start_time": start.isoformat(),
+        "end_time": (start + timedelta(hours=1)).isoformat(),
+        "purpose": "Notification flow test",
+    }
+
+    created = data(client.post("/api/v1/reservations", json=payload, headers=auth_headers("ordinary01")))
+
+    owner_notifications = data(client.get("/api/v1/notifications", headers=auth_headers("owner01")))
+    assert owner_notifications["total"] >= 1
+    assert any(item["business_id"] == created["id"] for item in owner_notifications["items"])
+
+    approved = data(client.post(f"/api/v1/reservations/{created['id']}/approve", headers=auth_headers("owner01")))
+    assert approved["status"] == "approved"
+
+    ordinary_notifications = data(client.get("/api/v1/notifications", headers=auth_headers("ordinary01")))
+    unread = [item for item in ordinary_notifications["items"] if not item["is_read"]]
+    assert unread
+
+    marked = data(client.patch(f"/api/v1/notifications/{unread[0]['id']}/read", headers=auth_headers("ordinary01")))
+    assert marked["is_read"] is True
+
+    audit_logs = data(client.get("/api/v1/audit-logs", params={"resource_type": "reservation"}, headers=auth_headers("admin")))
+    assert audit_logs["total"] >= 1
+    assert any(item["resource_id"] == created["id"] for item in audit_logs["items"])
+    assert client.get("/api/v1/audit-logs", headers=auth_headers("ordinary01")).status_code == 403

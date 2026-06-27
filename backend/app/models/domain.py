@@ -307,6 +307,47 @@ class MaintenanceRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     next_maintenance_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class Notification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "notifications"
+    __table_args__ = (
+        CheckConstraint("category IN ('info','success','warning','error')", name="ck_notifications_category"),
+        Index("idx_notifications_recipient_id", "recipient_id"),
+        Index("idx_notifications_is_read", "is_read"),
+        Index("idx_notifications_business", "business_type", "business_id"),
+        Index("idx_notifications_recipient_read_created", "recipient_id", "is_read", "created_at"),
+    )
+
+    recipient_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'info'"))
+    business_type: Mapped[str | None] = mapped_column(String(64))
+    business_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuditLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        CheckConstraint("result IN ('success','failure')", name="ck_audit_logs_result"),
+        Index("idx_audit_logs_actor_id", "actor_id"),
+        Index("idx_audit_logs_resource", "resource_type", "resource_id"),
+        Index("idx_audit_logs_action", "action"),
+        Index("idx_audit_logs_created_at", "created_at"),
+    )
+
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text)
+    result: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'success'"))
+
+
 class OperationMetric(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "operation_metrics"
     __table_args__ = (

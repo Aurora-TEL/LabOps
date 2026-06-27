@@ -121,4 +121,4 @@ def cancel_reservation(
     if not can_cancel_all and not can_cancel_self:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient permission")
     ensure_can_manage_reservation(db, reservation_id, current_user)
-    return ok(labops_service.cancel_reservation(db, reservation_id))
+    return ok(labops_service.cancel_reservation(db, reservation_id, current_user.id))

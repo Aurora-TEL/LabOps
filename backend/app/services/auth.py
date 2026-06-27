@@ -39,6 +39,8 @@ DEMO_USERS: dict[str, CurrentUser] = {
             "reservation:cancel_self",
             "repair:view_self",
             "repair:create",
+            "notification:view",
+            "notification:update",
         ],
     ),
     "owner01": CurrentUser(
@@ -59,6 +61,8 @@ DEMO_USERS: dict[str, CurrentUser] = {
             "work_order:create",
             "work_order:update",
             "work_order:close",
+            "notification:view",
+            "notification:update",
         ],
     ),
     "student01": CurrentUser(
@@ -74,6 +78,8 @@ DEMO_USERS: dict[str, CurrentUser] = {
             "reservation:cancel_self",
             "repair:view_self",
             "repair:create",
+            "notification:view",
+            "notification:update",
         ],
     ),
     "teacher01": CurrentUser(
@@ -81,7 +87,16 @@ DEMO_USERS: dict[str, CurrentUser] = {
         username="teacher01",
         real_name="Teacher Demo",
         roles=["teacher"],
-        permissions=["dashboard:view", "analytics:view", "device:view", "reservation:view_all", "reservation:approve", "repair:view_all"],
+        permissions=[
+            "dashboard:view",
+            "analytics:view",
+            "device:view",
+            "reservation:view_all",
+            "reservation:approve",
+            "repair:view_all",
+            "notification:view",
+            "notification:update",
+        ],
     ),
     "labadmin01": CurrentUser(
         id=UUID("00000000-0000-0000-0000-000000000103"),
@@ -109,6 +124,9 @@ DEMO_USERS: dict[str, CurrentUser] = {
             "work_order:update",
             "work_order:close",
             "dictionary:manage",
+            "notification:view",
+            "notification:update",
+            "audit_log:view",
         ],
     ),
     "admin": CurrentUser(
@@ -139,6 +157,9 @@ DEMO_USERS: dict[str, CurrentUser] = {
             "user:manage",
             "role:manage",
             "dictionary:manage",
+            "notification:view",
+            "notification:update",
+            "audit_log:view",
         ],
     ),
 }
