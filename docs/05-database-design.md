@@ -1,5 +1,25 @@
 # LabOps 数据库设计
 
+## v1.3 增量说明
+
+当前实现中的主演示角色和账号为：
+
+| 用户名 | 角色编码 | 说明 |
+| --- | --- | --- |
+| `ordinary01` | `ordinary_user` | 普通用户，自助预约和报修 |
+| `owner01` | `device_owner` | 设备负责人，处理本人负责设备相关预约、报修和工单 |
+| `labadmin01` | `lab_admin` | 实验室管理员，全局业务运营 |
+| `admin` | `system_admin` | 系统管理员，全局管理和系统设置 |
+
+设备负责人数据范围由 `devices.manager_id` 支撑。后端查询设备、预约、报修和工单时，会根据当前用户角色追加设备负责人范围过滤：
+
+- 设备列表：`devices.manager_id = current_user.id`
+- 预约列表：通过 `reservations.device_id -> devices.id` 关联后过滤 `devices.manager_id`
+- 报修列表：通过 `repair_reports.device_id -> devices.id` 关联后过滤 `devices.manager_id`
+- 工单列表：通过 `work_orders.device_id -> devices.id` 关联后过滤 `devices.manager_id`
+
+设备负责人可以维护本人负责设备状态，但不能通过设备更新接口修改 `manager_id`。
+
 ## 1. 设计目标
 
 LabOps 使用 PostgreSQL 存储实验室设备预约、报修、维修工单和运营看板数据。数据库设计围绕三条主线展开：

@@ -18,7 +18,7 @@ LabOps 的运行环境全部放在 Docker 容器中。宿主机只需要：
 | backend | `labops-backend` | FastAPI 后端 | `http://localhost:8000` |
 | frontend | `labops-frontend` | Vue3 / Vite 前端 | `http://localhost:5173` |
 
-## 3. 环境变量
+## 3. 启动
 
 首次启动前复制环境变量模板：
 
@@ -26,23 +26,7 @@ LabOps 的运行环境全部放在 Docker 容器中。宿主机只需要：
 cp .env.example .env
 ```
 
-关键变量：
-
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `POSTGRES_DB` | `labops` | 数据库名 |
-| `POSTGRES_USER` | `labops` | 数据库用户 |
-| `POSTGRES_PASSWORD` | `labops_dev_password` | 数据库密码 |
-| `DATABASE_URL` | `postgresql+psycopg://labops:labops_dev_password@postgres:5432/labops` | 后端容器访问数据库的连接串 |
-| `CORS_ORIGINS` | `["http://localhost:5173"]` | 后端允许的前端来源 |
-| `VITE_API_BASE_URL` | `http://localhost:8000/api/v1` | 前端访问后端 API 的基础地址 |
-| `VITE_API_PROXY_TARGET` | `http://backend:8000` | Vite 开发服务器代理 `/api` 的后端容器地址 |
-
-前端 API client 会优先使用 `VITE_API_BASE_URL`。如果需要走容器内反向代理，可将 `VITE_API_BASE_URL` 设为 `/api/v1` 或不设置该变量；开发模式由 Vite 将 `/api` 转发到 `VITE_API_PROXY_TARGET`，预览镜像由 nginx 将 `/api/` 转发到 `backend:8000`。
-
-## 4. 启动
-
-在项目根目录执行：
+启动服务：
 
 ```bash
 docker compose up --build
@@ -68,29 +52,28 @@ docker compose logs -f frontend
 docker compose logs -f postgres
 ```
 
-## 5. 验证
-
-后端健康检查：
+## 4. 数据库初始化
 
 ```bash
-curl http://localhost:8000/api/v1/health/live
+docker compose exec backend alembic upgrade head
+docker compose exec backend python -m app.db.seed
 ```
 
-前端访问：
+种子数据包含：
 
-```text
-http://localhost:5173
-```
+- `ordinary01 / labops123`
+- `owner01 / labops123`
+- `labadmin01 / labops123`
+- `admin / password`
+- 可演示的设备、预约、报修、工单和运营指标
 
-Swagger 文档：
+## 5. 当前推荐验收命令
 
-```text
-http://localhost:8000/docs
-```
-
-v1.2 最终集成验收建议补充检查：
+v1.3 最终集成验收建议执行：
 
 ```bash
+docker compose build --progress=plain
+docker compose up -d --force-recreate
 docker compose ps
 docker compose exec backend alembic upgrade head
 docker compose exec backend python -m app.db.seed
@@ -98,27 +81,19 @@ docker compose run --rm -e PYTHONDONTWRITEBYTECODE=1 backend pytest -p no:cachep
 docker build --target build -t labops-frontend-build-check ./frontend
 ```
 
-v1.1 演示验收可使用的基础检查：
+说明：
 
-```bash
-docker compose ps
-docker compose exec backend pytest
-docker compose exec frontend npm run build
-```
+- 后端测试使用 `docker compose run`，避免在宿主机安装 Python 依赖。
+- 前端生产构建使用 `docker build --target build`，避免 `dist` 写回宿主机。
+- 更完整的 v1.3 演示路径见 [v1.3 验收与演示手册](15-v1.3-acceptance-demo.md)。
 
-以上命令都应在容器环境中执行。不要在宿主机执行 `pip install`、`npm install` 或 `npm run build`。
+## 6. 访问地址
 
-## 6. 容器内命令
+- 前端：`http://localhost:5173`
+- 后端 Swagger：`http://localhost:8000/docs`
+- 后端健康检查：`http://localhost:8000/api/v1/health/live`
 
-所有测试和维护命令都通过容器执行：
-
-```bash
-docker compose exec backend pytest
-docker compose exec frontend npm run build
-docker compose exec postgres psql -U labops -d labops
-```
-
-## 7. 停止
+## 7. 停止服务
 
 停止服务：
 
@@ -132,14 +107,33 @@ docker compose down
 docker compose down -v
 ```
 
-## 8. 常见排错
+## 8. 宿主机产物检查
+
+验证结束后，宿主机不应残留：
+
+```text
+frontend/node_modules
+frontend/dist
+frontend/tsconfig.tsbuildinfo
+backend/.venv
+backend/.pytest_cache
+backend/**/__pycache__
+.venv
+.pytest_cache
+```
+
+检查命令：
+
+```bash
+git status --short
+```
+
+## 9. 常见排错
 
 | 问题 | 建议 |
 | --- | --- |
 | 后端无法连接数据库 | 检查 `DATABASE_URL` 中主机名是否为 `postgres`，并查看 `docker compose logs postgres` |
-| 前端请求 API 失败 | 检查 `VITE_API_BASE_URL` 是否为 `http://localhost:8000/api/v1`，并在浏览器 Network 中确认请求路径 |
-| 健康检查失败 | 先执行 `docker compose ps`，再分别查看 `docker compose logs backend` 和 `docker compose logs frontend` |
+| 前端请求 API 失败 | 检查 `VITE_API_BASE_URL` 是否指向 `http://localhost:8000/api/v1` |
+| 健康检查失败 | 先执行 `docker compose ps`，再查看 `docker compose logs backend` 和 `docker compose logs frontend` |
 | 端口被占用 | 在 `.env` 中调整 `BACKEND_PORT`、`FRONTEND_PORT` 或 `POSTGRES_PORT` 后重启 |
-| 演示数据不正确 | 合并 DB Agent 后重新执行迁移和种子数据导入；必要时使用 `docker compose down -v` 清空本地演示卷 |
-
-更完整的 v1.2 复试演示与验收流程见 `docs/13-v1.2-acceptance-demo.md`；v1.1 资料见 `docs/11-v1.1-acceptance-demo.md`。
+| 演示数据异常 | 执行迁移和种子数据导入；必要时使用 `docker compose down -v` 清空本地演示卷 |

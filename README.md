@@ -1,8 +1,8 @@
 # LabOps
 
-LabOps 智能实验室设备预约与运维管理平台，用于考研复试展示。
+LabOps 是一个用于考研复试展示的智能实验室设备预约与运维管理平台。
 
-项目定位为数据看板型中后台系统，参考智能制造运营平台与 ERP 管理后台风格，采用浅色科技风 UI，包含预约、设备、报修、工单、数据分析和角色权限等模块。
+项目定位为数据看板型中后台系统，UI 参考智能制造运营平台和 ERP 管理后台，采用浅色科技风，包含左侧导航、顶部栏、指标卡片、ECharts 图表，以及预约、设备、报修、工单、数据分析和角色权限等模块。
 
 ## 技术栈
 
@@ -34,17 +34,55 @@ docker compose up --build
 - 后端 Swagger: `http://localhost:8000/docs`
 - PostgreSQL: `localhost:5432`
 
-## v1.2 演示与验收
+初始化数据库和演示数据：
 
-v1.2 复试演示建议按“登录 -> 看板 -> 新增预约 -> 审批/取消 -> 报修 -> 工单 -> 数据分析 -> Swagger/容器化总结”的路径展开，突出真实登录/RBAC、PostgreSQL CRUD、前端表单操作和看板数据变化。
+```bash
+docker compose exec backend alembic upgrade head
+docker compose exec backend python -m app.db.seed
+```
 
-详细验收清单、演示路径、多 Agent 合并顺序、冲突风险和最终容器验证清单见：[v1.2 验收与演示手册](docs/13-v1.2-acceptance-demo.md)。
+## 演示账号
 
-## v1.1 演示与验收
+| 身份 | 用户名 | 密码 | 登录后页面 | 演示重点 |
+| --- | --- | --- | --- | --- |
+| 普通用户 | `ordinary01` | `labops123` | `/ordinary` | 设备查询、预约申请、取消本人预约、提交报修、查看本人记录 |
+| 设备负责人 | `owner01` | `labops123` | `/owner` | 负责设备状态维护、预约审批、报修派工、工单推进 |
+| 实验室管理员 | `labadmin01` | `labops123` | `/dashboard` | 完整运营后台、设备预约报修工单管理 |
+| 系统管理员 | `admin` | `password` | `/dashboard` | 全局管理、系统设置、用户角色能力展示 |
 
-v1.1 复试演示建议按“运营首页 -> 预约管理 -> 设备状态 -> 报修工单 -> 数据分析 -> Swagger/容器化总结”的路径展开，控制在 3-5 分钟内。
+## v1.3 演示与验收
 
-详细验收清单、演示串词、Docker 排错和多 Agent 合并风险见：[v1.1 验收与演示手册](docs/11-v1.1-acceptance-demo.md)。
+v1.3 的重点是“不同身份进入不同前端”：
+
+1. 使用 `ordinary01` 登录，系统直接进入普通用户自助台。
+2. 使用 `owner01` 登录，系统直接进入设备负责人工作台。
+3. 使用 `admin` 或 `labadmin01` 登录，系统进入完整运营后台。
+4. 通过 Swagger 或测试用例说明：前端隐藏按钮只是体验层，后端接口仍会校验 token、权限和数据范围。
+
+详细说明见：
+
+- [v1.3 角色工作台与权限范围](docs/14-v1.3-role-workbenches.md)
+- [v1.3 验收与演示手册](docs/15-v1.3-acceptance-demo.md)
+
+## 容器内验证命令
+
+```bash
+docker compose build --progress=plain
+docker compose up -d --force-recreate
+docker compose ps
+docker compose exec backend alembic upgrade head
+docker compose exec backend python -m app.db.seed
+docker compose run --rm -e PYTHONDONTWRITEBYTECODE=1 backend pytest -p no:cacheprovider
+docker build --target build -t labops-frontend-build-check ./frontend
+```
+
+验证结束后，宿主机不应残留：
+
+- `frontend/node_modules`
+- `frontend/dist`
+- `backend/.venv`
+- `backend/.pytest_cache`
+- `__pycache__`
 
 ## 开发流程
 
@@ -52,6 +90,7 @@ v1.1 复试演示建议按“运营首页 -> 预约管理 -> 设备状态 -> 报
 2. 设计 PostgreSQL 数据库表结构和 ER 关系。
 3. 规划 REST API 接口文档。
 4. 落地 FastAPI 后端、Vue3 前端和 Docker 容器化配置。
+5. 通过多 agent 协作拆分后端、前端、文档、验证任务，由主线程统一集成和验收。
 
 ## 目录结构
 
@@ -79,3 +118,5 @@ LabOps/
 - [v1.1 验收与演示手册](docs/11-v1.1-acceptance-demo.md)
 - [v1.2 开发路线](docs/12-v1.2-roadmap.md)
 - [v1.2 验收与演示手册](docs/13-v1.2-acceptance-demo.md)
+- [v1.3 角色工作台与权限范围](docs/14-v1.3-role-workbenches.md)
+- [v1.3 验收与演示手册](docs/15-v1.3-acceptance-demo.md)
