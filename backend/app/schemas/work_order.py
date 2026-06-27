@@ -16,9 +16,11 @@ class WorkOrderPriority(StrEnum):
 
 class WorkOrderStatus(StrEnum):
     pending = "pending"
+    assigned = "assigned"
     processing = "processing"
     finished = "finished"
     canceled = "canceled"
+    closed = "closed"
 
 
 class WorkOrderCreate(BaseModel):

@@ -2,8 +2,10 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
+from app.db.session import get_db
 from app.schemas.auth import CurrentUser
 from app.schemas.common import ApiResponse, PageData, ok
 from app.schemas.reservation import ReservationCreate, ReservationRead, ReservationReject, ReservationStatus
@@ -21,9 +23,11 @@ def list_reservations(
     status: ReservationStatus | None = None,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
+    db: Session = Depends(get_db),
 ) -> ApiResponse[PageData[ReservationRead]]:
     return ok(
         labops_service.list_reservations(
+            db,
             page=page,
             page_size=page_size,
             device_id=device_id,
@@ -39,21 +43,23 @@ def list_reservations(
 def create_reservation(
     payload: ReservationCreate,
     current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[ReservationRead]:
-    return ok(labops_service.create_reservation(payload, current_user.id))
+    return ok(labops_service.create_reservation(db, payload, current_user.id))
 
 
 @router.get("/{reservation_id}", response_model=ApiResponse[ReservationRead])
-def get_reservation(reservation_id: UUID) -> ApiResponse[ReservationRead]:
-    return ok(labops_service.get_reservation(reservation_id))
+def get_reservation(reservation_id: UUID, db: Session = Depends(get_db)) -> ApiResponse[ReservationRead]:
+    return ok(labops_service.get_reservation(db, reservation_id))
 
 
 @router.post("/{reservation_id}/approve", response_model=ApiResponse[ReservationRead])
 def approve_reservation(
     reservation_id: UUID,
     current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[ReservationRead]:
-    return ok(labops_service.approve_reservation(reservation_id, current_user.id))
+    return ok(labops_service.approve_reservation(db, reservation_id, current_user.id))
 
 
 @router.post("/{reservation_id}/reject", response_model=ApiResponse[ReservationRead])
@@ -61,10 +67,11 @@ def reject_reservation(
     reservation_id: UUID,
     payload: ReservationReject,
     current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[ReservationRead]:
-    return ok(labops_service.reject_reservation(reservation_id, current_user.id, payload.reject_reason))
+    return ok(labops_service.reject_reservation(db, reservation_id, current_user.id, payload.reject_reason))
 
 
 @router.post("/{reservation_id}/cancel", response_model=ApiResponse[ReservationRead])
-def cancel_reservation(reservation_id: UUID) -> ApiResponse[ReservationRead]:
-    return ok(labops_service.cancel_reservation(reservation_id))
+def cancel_reservation(reservation_id: UUID, db: Session = Depends(get_db)) -> ApiResponse[ReservationRead]:
+    return ok(labops_service.cancel_reservation(db, reservation_id))

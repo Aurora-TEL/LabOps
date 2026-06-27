@@ -10,6 +10,8 @@ class RepairReportStatus(StrEnum):
     submitted = "submitted"
     accepted = "accepted"
     assigned = "assigned"
+    processing = "processing"
+    finished = "finished"
     closed = "closed"
 
 

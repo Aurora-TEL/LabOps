@@ -1,31 +1,21 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
-from uuid import UUID, uuid4
-from typing import TypeVar
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
+from app.models.domain import Device, DeviceCategory, Lab, OperationMetric, RepairReport, Reservation, User, WorkOrder
 from app.schemas.common import PageData, utc_now
 from app.schemas.dashboard import DashboardSummary, StatusCount, TrendPoint
 from app.schemas.device import DeviceCreate, DeviceRead, DeviceStatus, DeviceUpdate
 from app.schemas.repair_report import RepairReportCreate, RepairReportRead, RepairReportStatus
 from app.schemas.reservation import ReservationCreate, ReservationRead, ReservationStatus
 from app.schemas.work_order import WorkOrderCreate, WorkOrderPriority, WorkOrderRead, WorkOrderStatus
-
-T = TypeVar("T")
-DEMO_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
-DEVICE_A_ID = UUID("10000000-0000-0000-0000-000000000001")
-DEVICE_B_ID = UUID("10000000-0000-0000-0000-000000000002")
-DEVICE_C_ID = UUID("10000000-0000-0000-0000-000000000003")
-RESERVATION_A_ID = UUID("20000000-0000-0000-0000-000000000001")
-RESERVATION_B_ID = UUID("20000000-0000-0000-0000-000000000002")
-REPAIR_A_ID = UUID("30000000-0000-0000-0000-000000000001")
-REPAIR_B_ID = UUID("30000000-0000-0000-0000-000000000002")
-WORK_ORDER_A_ID = UUID("40000000-0000-0000-0000-000000000001")
-WORK_ORDER_B_ID = UUID("40000000-0000-0000-0000-000000000002")
 
 
 def _not_found(resource: str) -> HTTPException:
@@ -36,154 +26,69 @@ def _conflict(message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message)
 
 
-def _page(items: list[T], page: int, page_size: int) -> PageData[T]:
-    start = (page - 1) * page_size
-    end = start + page_size
-    return PageData(items=items[start:end], page=page, page_size=page_size, total=len(items))
+def _bad_request(message: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
 
-def _matches(value: object, expected: object | None) -> bool:
-    return expected is None or value == expected
+def _page(db: Session, statement: Select[tuple[object]], page: int, page_size: int) -> PageData:
+    total_statement = select(func.count()).select_from(statement.order_by(None).subquery())
+    total = db.scalar(total_statement) or 0
+    items = db.scalars(statement.offset((page - 1) * page_size).limit(page_size)).all()
+    return PageData(items=items, page=page, page_size=page_size, total=total)
 
 
-def _sort_by_updated_at(items: Iterable[T]) -> list[T]:
-    return sorted(items, key=lambda item: item.updated_at, reverse=True)
+def _enum_value(value: object | None) -> str | None:
+    if value is None:
+        return None
+    return str(getattr(value, "value", value))
 
 
-@dataclass
+def _to_float(value: Decimal | None) -> float | None:
+    return float(value) if value is not None else None
+
+
+DEVICE_TO_DB = {
+    DeviceStatus.available: "idle",
+    DeviceStatus.reserved: "in_use",
+    DeviceStatus.in_use: "in_use",
+    DeviceStatus.maintenance: "maintenance",
+    DeviceStatus.disabled: "disabled",
+}
+DEVICE_FROM_DB = {
+    "idle": DeviceStatus.available,
+    "in_use": DeviceStatus.in_use,
+    "maintenance": DeviceStatus.maintenance,
+    "fault": DeviceStatus.maintenance,
+    "disabled": DeviceStatus.disabled,
+}
+RESERVATION_TO_DB = {
+    ReservationStatus.pending: "pending",
+    ReservationStatus.approved: "approved",
+    ReservationStatus.rejected: "rejected",
+    ReservationStatus.canceled: "cancelled",
+    ReservationStatus.completed: "completed",
+}
+RESERVATION_FROM_DB = {value: key for key, value in RESERVATION_TO_DB.items()}
+WORK_ORDER_TO_DB = {
+    WorkOrderStatus.pending: "assigned",
+    WorkOrderStatus.assigned: "assigned",
+    WorkOrderStatus.processing: "processing",
+    WorkOrderStatus.finished: "finished",
+    WorkOrderStatus.canceled: "closed",
+    WorkOrderStatus.closed: "closed",
+}
+WORK_ORDER_FROM_DB = {
+    "assigned": WorkOrderStatus.pending,
+    "processing": WorkOrderStatus.processing,
+    "finished": WorkOrderStatus.finished,
+    "closed": WorkOrderStatus.closed,
+}
+
+
 class LabOpsService:
-    devices: dict[UUID, DeviceRead] = field(default_factory=dict)
-    reservations: dict[UUID, ReservationRead] = field(default_factory=dict)
-    repair_reports: dict[UUID, RepairReportRead] = field(default_factory=dict)
-    work_orders: dict[UUID, WorkOrderRead] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if not self.devices:
-            self._seed()
-
-    def _seed(self) -> None:
-        now = utc_now()
-        tomorrow = datetime.combine(date.today() + timedelta(days=1), time(9, 0), tzinfo=timezone.utc)
-        self.devices = {
-            DEVICE_A_ID: DeviceRead(
-                id=DEVICE_A_ID,
-                code="DEV-001",
-                name="High-speed centrifuge",
-                category_id=None,
-                lab_id=None,
-                manager_id=DEMO_USER_ID,
-                status=DeviceStatus.available,
-                health_score=96.5,
-                purchase_date=date(2025, 9, 1),
-                created_at=now - timedelta(days=80),
-                updated_at=now - timedelta(hours=2),
-            ),
-            DEVICE_B_ID: DeviceRead(
-                id=DEVICE_B_ID,
-                code="DEV-002",
-                name="Environmental test chamber",
-                category_id=None,
-                lab_id=None,
-                manager_id=DEMO_USER_ID,
-                status=DeviceStatus.maintenance,
-                health_score=74.0,
-                purchase_date=date(2024, 5, 12),
-                created_at=now - timedelta(days=120),
-                updated_at=now - timedelta(hours=1),
-            ),
-            DEVICE_C_ID: DeviceRead(
-                id=DEVICE_C_ID,
-                code="DEV-003",
-                name="3D optical profiler",
-                category_id=None,
-                lab_id=None,
-                manager_id=DEMO_USER_ID,
-                status=DeviceStatus.in_use,
-                health_score=88.0,
-                purchase_date=date(2025, 1, 20),
-                created_at=now - timedelta(days=95),
-                updated_at=now - timedelta(hours=3),
-            ),
-        }
-        self.reservations = {
-            RESERVATION_A_ID: ReservationRead(
-                id=RESERVATION_A_ID,
-                device_id=DEVICE_A_ID,
-                applicant_id=DEMO_USER_ID,
-                approver_id=DEMO_USER_ID,
-                start_time=tomorrow,
-                end_time=tomorrow + timedelta(hours=2),
-                purpose="Material sample analysis",
-                status=ReservationStatus.approved,
-                reject_reason=None,
-                created_at=now - timedelta(days=1),
-                updated_at=now - timedelta(hours=12),
-            ),
-            RESERVATION_B_ID: ReservationRead(
-                id=RESERVATION_B_ID,
-                device_id=DEVICE_C_ID,
-                applicant_id=DEMO_USER_ID,
-                approver_id=None,
-                start_time=tomorrow + timedelta(hours=4),
-                end_time=tomorrow + timedelta(hours=6),
-                purpose="Surface morphology measurement",
-                status=ReservationStatus.pending,
-                reject_reason=None,
-                created_at=now - timedelta(hours=5),
-                updated_at=now - timedelta(hours=5),
-            ),
-        }
-        self.repair_reports = {
-            REPAIR_A_ID: RepairReportRead(
-                id=REPAIR_A_ID,
-                device_id=DEVICE_B_ID,
-                reporter_id=DEMO_USER_ID,
-                fault_type="hardware",
-                description="Startup vibration exceeds the warning threshold.",
-                status=RepairReportStatus.assigned,
-                created_at=now - timedelta(days=2),
-                updated_at=now - timedelta(hours=8),
-            ),
-            REPAIR_B_ID: RepairReportRead(
-                id=REPAIR_B_ID,
-                device_id=DEVICE_C_ID,
-                reporter_id=DEMO_USER_ID,
-                fault_type="calibration",
-                description="Measurement baseline drift requires recalibration.",
-                status=RepairReportStatus.submitted,
-                created_at=now - timedelta(hours=9),
-                updated_at=now - timedelta(hours=9),
-            ),
-        }
-        self.work_orders = {
-            WORK_ORDER_A_ID: WorkOrderRead(
-                id=WORK_ORDER_A_ID,
-                repair_report_id=REPAIR_A_ID,
-                assignee_id=DEMO_USER_ID,
-                priority=WorkOrderPriority.high,
-                status=WorkOrderStatus.processing,
-                result=None,
-                started_at=now - timedelta(hours=7),
-                finished_at=None,
-                created_at=now - timedelta(days=2),
-                updated_at=now - timedelta(hours=7),
-            ),
-            WORK_ORDER_B_ID: WorkOrderRead(
-                id=WORK_ORDER_B_ID,
-                repair_report_id=REPAIR_B_ID,
-                assignee_id=None,
-                priority=WorkOrderPriority.medium,
-                status=WorkOrderStatus.pending,
-                result=None,
-                started_at=None,
-                finished_at=None,
-                created_at=now - timedelta(hours=8),
-                updated_at=now - timedelta(hours=8),
-            ),
-        }
-
     def list_devices(
         self,
+        db: Session,
         *,
         page: int,
         page_size: int,
@@ -192,53 +97,77 @@ class LabOpsService:
         category_id: UUID | None = None,
         status: DeviceStatus | None = None,
     ) -> PageData[DeviceRead]:
-        normalized_keyword = keyword.lower().strip() if keyword else None
-        items = [
-            item
-            for item in self.devices.values()
-            if _matches(item.lab_id, lab_id)
-            and _matches(item.category_id, category_id)
-            and _matches(item.status, status)
-            and (
-                normalized_keyword is None
-                or normalized_keyword in item.code.lower()
-                or normalized_keyword in item.name.lower()
-            )
-        ]
-        return _page(_sort_by_updated_at(items), page, page_size)
+        statement = select(Device)
+        if lab_id is not None:
+            statement = statement.where(Device.lab_id == lab_id)
+        if category_id is not None:
+            statement = statement.where(Device.category_id == category_id)
+        if status is not None:
+            statement = statement.where(Device.status == DEVICE_TO_DB[status])
+        if keyword:
+            pattern = f"%{keyword.lower().strip()}%"
+            statement = statement.where(or_(func.lower(Device.code).like(pattern), func.lower(Device.name).like(pattern)))
+        statement = statement.order_by(Device.updated_at.desc(), Device.created_at.desc())
+        page_data = _page(db, statement, page, page_size)
+        return PageData(
+            items=[self._device_read(item) for item in page_data.items],
+            page=page_data.page,
+            page_size=page_data.page_size,
+            total=page_data.total,
+        )
 
-    def create_device(self, payload: DeviceCreate) -> DeviceRead:
-        if any(item.code == payload.code for item in self.devices.values()):
+    def create_device(self, db: Session, payload: DeviceCreate) -> DeviceRead:
+        if db.scalar(select(Device.id).where(Device.code == payload.code)):
             raise _conflict("device code already exists")
-        now = utc_now()
-        device = DeviceRead(id=uuid4(), created_at=now, updated_at=now, **payload.model_dump())
-        self.devices[device.id] = device
-        return device
+        category_id = payload.category_id or self._default_id(db, DeviceCategory, "device category")
+        lab_id = payload.lab_id or self._default_id(db, Lab, "lab")
+        device = Device(
+            code=payload.code,
+            name=payload.name,
+            category_id=category_id,
+            lab_id=lab_id,
+            manager_id=self._optional_existing_user_id(db, payload.manager_id),
+            status=DEVICE_TO_DB[payload.status],
+            health_score=Decimal(str(payload.health_score if payload.health_score is not None else 100)),
+            purchase_date=payload.purchase_date,
+        )
+        db.add(device)
+        self._commit(db)
+        db.refresh(device)
+        return self._device_read(device)
 
-    def get_device(self, device_id: UUID) -> DeviceRead:
-        try:
-            return self.devices[device_id]
-        except KeyError as exc:
-            raise _not_found("device") from exc
+    def get_device(self, db: Session, device_id: UUID) -> DeviceRead:
+        return self._device_read(self._device(db, device_id))
 
-    def update_device(self, device_id: UUID, payload: DeviceUpdate) -> DeviceRead:
-        current = self.get_device(device_id)
+    def update_device(self, db: Session, device_id: UUID, payload: DeviceUpdate) -> DeviceRead:
+        device = self._device(db, device_id)
         changes = payload.model_dump(exclude_unset=True)
-        if "code" in changes and any(item.id != device_id and item.code == changes["code"] for item in self.devices.values()):
+        if "code" in changes and db.scalar(select(Device.id).where(Device.id != device_id, Device.code == changes["code"])):
             raise _conflict("device code already exists")
-        updated = current.model_copy(update=changes | {"updated_at": utc_now()})
-        self.devices[device_id] = updated
-        return updated
+        for key, value in changes.items():
+            if key == "status" and value is not None:
+                setattr(device, key, DEVICE_TO_DB[value])
+            elif key == "health_score" and value is not None:
+                setattr(device, key, Decimal(str(value)))
+            elif key in {"category_id", "lab_id"} and value is None:
+                continue
+            elif key == "manager_id":
+                setattr(device, key, self._optional_existing_user_id(db, value))
+            else:
+                setattr(device, key, value)
+        self._commit(db)
+        db.refresh(device)
+        return self._device_read(device)
 
-    def update_device_status(self, device_id: UUID, status_: DeviceStatus) -> DeviceRead:
-        return self.update_device(device_id, DeviceUpdate(status=status_))
+    def update_device_status(self, db: Session, device_id: UUID, status_: DeviceStatus) -> DeviceRead:
+        return self.update_device(db, device_id, DeviceUpdate(status=status_))
 
-    def delete_device(self, device_id: UUID) -> DeviceRead:
-        current = self.get_device(device_id)
-        return self.update_device(device_id, DeviceUpdate(status=DeviceStatus.disabled))
+    def delete_device(self, db: Session, device_id: UUID) -> DeviceRead:
+        return self.update_device(db, device_id, DeviceUpdate(status=DeviceStatus.disabled))
 
     def list_reservations(
         self,
+        db: Session,
         *,
         page: int,
         page_size: int,
@@ -248,91 +177,81 @@ class LabOpsService:
         start_time: datetime | None = None,
         end_time: datetime | None = None,
     ) -> PageData[ReservationRead]:
-        items = [
-            item
-            for item in self.reservations.values()
-            if _matches(item.device_id, device_id)
-            and _matches(item.applicant_id, applicant_id)
-            and _matches(item.status, status)
-            and (start_time is None or item.end_time >= start_time)
-            and (end_time is None or item.start_time <= end_time)
-        ]
-        return _page(_sort_by_updated_at(items), page, page_size)
-
-    def create_reservation(self, payload: ReservationCreate, applicant_id: UUID) -> ReservationRead:
-        self.get_device(payload.device_id)
-        self._ensure_no_reservation_conflict(payload.device_id, payload.start_time, payload.end_time)
-        now = utc_now()
-        reservation = ReservationRead(
-            id=uuid4(),
-            applicant_id=applicant_id,
-            approver_id=None,
-            status=ReservationStatus.pending,
-            reject_reason=None,
-            created_at=now,
-            updated_at=now,
-            **payload.model_dump(),
-        )
-        self.reservations[reservation.id] = reservation
-        return reservation
-
-    def get_reservation(self, reservation_id: UUID) -> ReservationRead:
-        try:
-            return self.reservations[reservation_id]
-        except KeyError as exc:
-            raise _not_found("reservation") from exc
-
-    def approve_reservation(self, reservation_id: UUID, approver_id: UUID) -> ReservationRead:
-        current = self.get_reservation(reservation_id)
-        self._ensure_no_reservation_conflict(current.device_id, current.start_time, current.end_time, reservation_id)
-        return self._save_reservation(
-            current.model_copy(
-                update={
-                    "status": ReservationStatus.approved,
-                    "approver_id": approver_id,
-                    "reject_reason": None,
-                    "updated_at": utc_now(),
-                }
-            )
+        statement = select(Reservation)
+        if device_id is not None:
+            statement = statement.where(Reservation.device_id == device_id)
+        if applicant_id is not None:
+            statement = statement.where(Reservation.applicant_id == applicant_id)
+        if status is not None:
+            statement = statement.where(Reservation.status == RESERVATION_TO_DB[status])
+        if start_time is not None:
+            statement = statement.where(Reservation.end_time >= start_time)
+        if end_time is not None:
+            statement = statement.where(Reservation.start_time <= end_time)
+        statement = statement.order_by(Reservation.updated_at.desc(), Reservation.created_at.desc())
+        page_data = _page(db, statement, page, page_size)
+        return PageData(
+            items=[self._reservation_read(item) for item in page_data.items],
+            page=page_data.page,
+            page_size=page_data.page_size,
+            total=page_data.total,
         )
 
-    def reject_reservation(self, reservation_id: UUID, approver_id: UUID, reject_reason: str) -> ReservationRead:
-        current = self.get_reservation(reservation_id)
-        return self._save_reservation(
-            current.model_copy(
-                update={
-                    "status": ReservationStatus.rejected,
-                    "approver_id": approver_id,
-                    "reject_reason": reject_reason,
-                    "updated_at": utc_now(),
-                }
-            )
+    def create_reservation(self, db: Session, payload: ReservationCreate, applicant_id: UUID) -> ReservationRead:
+        self._device(db, payload.device_id)
+        self._ensure_no_reservation_conflict(db, payload.device_id, payload.start_time, payload.end_time)
+        applicant = self._actor_user_id(db, applicant_id)
+        reservation = Reservation(
+            reservation_no=self._number("RSV"),
+            device_id=payload.device_id,
+            applicant_id=applicant,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            purpose=payload.purpose,
+            participant_count=1,
+            status="pending",
         )
+        db.add(reservation)
+        self._commit(db)
+        db.refresh(reservation)
+        return self._reservation_read(reservation)
 
-    def cancel_reservation(self, reservation_id: UUID) -> ReservationRead:
-        current = self.get_reservation(reservation_id)
-        return self._save_reservation(current.model_copy(update={"status": ReservationStatus.canceled, "updated_at": utc_now()}))
+    def get_reservation(self, db: Session, reservation_id: UUID) -> ReservationRead:
+        return self._reservation_read(self._reservation(db, reservation_id))
 
-    def _save_reservation(self, reservation: ReservationRead) -> ReservationRead:
-        self.reservations[reservation.id] = reservation
-        return reservation
+    def approve_reservation(self, db: Session, reservation_id: UUID, approver_id: UUID) -> ReservationRead:
+        reservation = self._reservation(db, reservation_id)
+        self._ensure_no_reservation_conflict(
+            db, reservation.device_id, reservation.start_time, reservation.end_time, reservation.id
+        )
+        reservation.status = "approved"
+        reservation.approver_id = self._actor_user_id(db, approver_id)
+        reservation.reject_reason = None
+        reservation.approved_at = utc_now()
+        self._commit(db)
+        db.refresh(reservation)
+        return self._reservation_read(reservation)
 
-    def _ensure_no_reservation_conflict(
-        self,
-        device_id: UUID,
-        start_time: datetime,
-        end_time: datetime,
-        ignored_reservation_id: UUID | None = None,
-    ) -> None:
-        conflict_statuses = {ReservationStatus.approved}
-        for item in self.reservations.values():
-            if item.id == ignored_reservation_id or item.device_id != device_id or item.status not in conflict_statuses:
-                continue
-            if start_time < item.end_time and end_time > item.start_time:
-                raise _conflict("reservation time conflicts with an approved reservation")
+    def reject_reservation(self, db: Session, reservation_id: UUID, approver_id: UUID, reject_reason: str) -> ReservationRead:
+        reservation = self._reservation(db, reservation_id)
+        reservation.status = "rejected"
+        reservation.approver_id = self._actor_user_id(db, approver_id)
+        reservation.reject_reason = reject_reason
+        self._commit(db)
+        db.refresh(reservation)
+        return self._reservation_read(reservation)
+
+    def cancel_reservation(self, db: Session, reservation_id: UUID) -> ReservationRead:
+        reservation = self._reservation(db, reservation_id)
+        reservation.status = "cancelled"
+        reservation.cancelled_at = utc_now()
+        self._commit(db)
+        db.refresh(reservation)
+        return self._reservation_read(reservation)
 
     def list_repair_reports(
         self,
+        db: Session,
         *,
         page: int,
         page_size: int,
@@ -341,39 +260,46 @@ class LabOpsService:
         status: RepairReportStatus | None = None,
         fault_type: str | None = None,
     ) -> PageData[RepairReportRead]:
-        normalized_fault_type = fault_type.lower().strip() if fault_type else None
-        items = [
-            item
-            for item in self.repair_reports.values()
-            if _matches(item.device_id, device_id)
-            and _matches(item.reporter_id, reporter_id)
-            and _matches(item.status, status)
-            and (normalized_fault_type is None or normalized_fault_type in item.fault_type.lower())
-        ]
-        return _page(_sort_by_updated_at(items), page, page_size)
-
-    def create_repair_report(self, payload: RepairReportCreate, reporter_id: UUID) -> RepairReportRead:
-        self.get_device(payload.device_id)
-        now = utc_now()
-        report = RepairReportRead(
-            id=uuid4(),
-            reporter_id=reporter_id,
-            status=RepairReportStatus.submitted,
-            created_at=now,
-            updated_at=now,
-            **payload.model_dump(),
+        statement = select(RepairReport)
+        if device_id is not None:
+            statement = statement.where(RepairReport.device_id == device_id)
+        if reporter_id is not None:
+            statement = statement.where(RepairReport.reporter_id == reporter_id)
+        if status is not None:
+            statement = statement.where(RepairReport.status == _enum_value(status))
+        if fault_type:
+            statement = statement.where(func.lower(RepairReport.fault_type).like(f"%{fault_type.lower().strip()}%"))
+        statement = statement.order_by(RepairReport.updated_at.desc(), RepairReport.created_at.desc())
+        page_data = _page(db, statement, page, page_size)
+        return PageData(
+            items=[self._repair_read(item) for item in page_data.items],
+            page=page_data.page,
+            page_size=page_data.page_size,
+            total=page_data.total,
         )
-        self.repair_reports[report.id] = report
-        return report
 
-    def get_repair_report(self, report_id: UUID) -> RepairReportRead:
-        try:
-            return self.repair_reports[report_id]
-        except KeyError as exc:
-            raise _not_found("repair report") from exc
+    def create_repair_report(self, db: Session, payload: RepairReportCreate, reporter_id: UUID) -> RepairReportRead:
+        self._device(db, payload.device_id)
+        report = RepairReport(
+            report_no=self._number("REP"),
+            device_id=payload.device_id,
+            reporter_id=self._actor_user_id(db, reporter_id),
+            fault_type=payload.fault_type,
+            urgency="medium",
+            description=payload.description,
+            status="submitted",
+        )
+        db.add(report)
+        self._commit(db)
+        db.refresh(report)
+        return self._repair_read(report)
+
+    def get_repair_report(self, db: Session, report_id: UUID) -> RepairReportRead:
+        return self._repair_read(self._repair_report(db, report_id))
 
     def list_work_orders(
         self,
+        db: Session,
         *,
         page: int,
         page_size: int,
@@ -381,110 +307,269 @@ class LabOpsService:
         status: WorkOrderStatus | None = None,
         priority: WorkOrderPriority | None = None,
     ) -> PageData[WorkOrderRead]:
-        items = [
-            item
-            for item in self.work_orders.values()
-            if _matches(item.assignee_id, assignee_id) and _matches(item.status, status) and _matches(item.priority, priority)
-        ]
-        return _page(_sort_by_updated_at(items), page, page_size)
-
-    def create_work_order(self, payload: WorkOrderCreate) -> WorkOrderRead:
-        self.get_repair_report(payload.repair_report_id)
-        now = utc_now()
-        work_order = WorkOrderRead(
-            id=uuid4(),
-            status=WorkOrderStatus.pending,
-            result=None,
-            started_at=None,
-            finished_at=None,
-            created_at=now,
-            updated_at=now,
-            **payload.model_dump(),
+        statement = select(WorkOrder)
+        if assignee_id is not None:
+            statement = statement.where(WorkOrder.assignee_id == assignee_id)
+        if status is not None:
+            statement = statement.where(WorkOrder.status == WORK_ORDER_TO_DB[status])
+        if priority is not None:
+            statement = statement.where(WorkOrder.priority == _enum_value(priority))
+        statement = statement.order_by(WorkOrder.updated_at.desc(), WorkOrder.created_at.desc())
+        page_data = _page(db, statement, page, page_size)
+        return PageData(
+            items=[self._work_order_read(item) for item in page_data.items],
+            page=page_data.page,
+            page_size=page_data.page_size,
+            total=page_data.total,
         )
-        self.work_orders[work_order.id] = work_order
-        self._update_repair_status(payload.repair_report_id, RepairReportStatus.assigned)
-        return work_order
 
-    def get_work_order(self, work_order_id: UUID) -> WorkOrderRead:
-        try:
-            return self.work_orders[work_order_id]
-        except KeyError as exc:
-            raise _not_found("work order") from exc
-
-    def update_work_order_status(self, work_order_id: UUID, status_: WorkOrderStatus) -> WorkOrderRead:
-        current = self.get_work_order(work_order_id)
-        now = utc_now()
-        changes: dict[str, object] = {"status": status_, "updated_at": now}
-        if status_ == WorkOrderStatus.processing and current.started_at is None:
-            changes["started_at"] = now
-        if status_ == WorkOrderStatus.finished:
-            changes["finished_at"] = now
-        updated = current.model_copy(update=changes)
-        self.work_orders[work_order_id] = updated
-        return updated
-
-    def finish_work_order(self, work_order_id: UUID, result: str) -> WorkOrderRead:
-        current = self.get_work_order(work_order_id)
-        now = utc_now()
-        updated = current.model_copy(
-            update={
-                "status": WorkOrderStatus.finished,
-                "result": result,
-                "finished_at": now,
-                "updated_at": now,
-            }
+    def create_work_order(self, db: Session, payload: WorkOrderCreate, creator_id: UUID | None = None) -> WorkOrderRead:
+        report = self._repair_report(db, payload.repair_report_id)
+        work_order = WorkOrder(
+            work_order_no=self._number("WO"),
+            repair_report_id=report.id,
+            device_id=report.device_id,
+            creator_id=self._actor_user_id(db, creator_id) if creator_id else self._first_user_id(db),
+            assignee_id=self._optional_existing_user_id(db, payload.assignee_id),
+            priority=payload.priority.value,
+            status="assigned",
         )
-        self.work_orders[work_order_id] = updated
-        self._update_repair_status(updated.repair_report_id, RepairReportStatus.closed)
-        return updated
+        report.status = "assigned"
+        report.accepted_at = report.accepted_at or utc_now()
+        db.add(work_order)
+        self._commit(db)
+        db.refresh(work_order)
+        return self._work_order_read(work_order)
 
-    def _update_repair_status(self, report_id: UUID, status_: RepairReportStatus) -> None:
-        report = self.get_repair_report(report_id)
-        self.repair_reports[report_id] = report.model_copy(update={"status": status_, "updated_at": utc_now()})
+    def get_work_order(self, db: Session, work_order_id: UUID) -> WorkOrderRead:
+        return self._work_order_read(self._work_order(db, work_order_id))
 
-    def dashboard_summary(self) -> DashboardSummary:
+    def update_work_order_status(self, db: Session, work_order_id: UUID, status_: WorkOrderStatus) -> WorkOrderRead:
+        work_order = self._work_order(db, work_order_id)
+        new_status = WORK_ORDER_TO_DB[status_]
+        work_order.status = new_status
+        now = utc_now()
+        if new_status == "processing" and work_order.started_at is None:
+            work_order.started_at = now
+            self._repair_report(db, work_order.repair_report_id).status = "processing"
+        if new_status == "finished":
+            work_order.finished_at = now
+            self._repair_report(db, work_order.repair_report_id).status = "finished"
+        if new_status == "closed":
+            work_order.closed_at = now
+            self._close_repair_report(db, work_order.repair_report_id, work_order.result)
+        self._commit(db)
+        db.refresh(work_order)
+        return self._work_order_read(work_order)
+
+    def finish_work_order(self, db: Session, work_order_id: UUID, result: str) -> WorkOrderRead:
+        work_order = self._work_order(db, work_order_id)
+        now = utc_now()
+        work_order.status = "finished"
+        work_order.result = result
+        work_order.finished_at = now
+        self._close_repair_report(db, work_order.repair_report_id, result)
+        self._commit(db)
+        db.refresh(work_order)
+        return self._work_order_read(work_order)
+
+    def dashboard_summary(self, db: Session) -> DashboardSummary:
+        today_start = datetime.combine(date.today(), datetime.min.time()).astimezone()
+        tomorrow_start = today_start + timedelta(days=1)
         return DashboardSummary(
-            device_total=len(self.devices),
-            device_available=sum(1 for item in self.devices.values() if item.status == DeviceStatus.available),
-            today_reservations=sum(1 for item in self.reservations.values() if item.start_time.date() == date.today()),
-            pending_repairs=sum(1 for item in self.repair_reports.values() if item.status == RepairReportStatus.submitted),
-            open_work_orders=sum(
-                1
-                for item in self.work_orders.values()
-                if item.status in {WorkOrderStatus.pending, WorkOrderStatus.processing}
-            ),
+            device_total=db.scalar(select(func.count()).select_from(Device)) or 0,
+            device_available=db.scalar(select(func.count()).select_from(Device).where(Device.status == "idle")) or 0,
+            today_reservations=db.scalar(
+                select(func.count())
+                .select_from(Reservation)
+                .where(Reservation.start_time >= today_start, Reservation.start_time < tomorrow_start)
+            )
+            or 0,
+            pending_repairs=db.scalar(select(func.count()).select_from(RepairReport).where(RepairReport.status == "submitted")) or 0,
+            open_work_orders=db.scalar(
+                select(func.count()).select_from(WorkOrder).where(WorkOrder.status.in_(["assigned", "processing"]))
+            )
+            or 0,
         )
 
-    def device_utilization(self, start_date: date | None, end_date: date | None, lab_id: UUID | None) -> list[TrendPoint]:
-        return self._trend(start_date, end_date, lab_id, lambda index: 58 + (index * 7) % 32)
+    def device_utilization(self, db: Session, start_date: date | None, end_date: date | None, lab_id: UUID | None) -> list[TrendPoint]:
+        return self._metric_trend(db, start_date, end_date, lab_id, OperationMetric.utilization_rate)
 
-    def repair_trend(self, start_date: date | None, end_date: date | None, lab_id: UUID | None) -> list[TrendPoint]:
-        return self._trend(start_date, end_date, lab_id, lambda index: float((index % 4) + 1))
+    def repair_trend(self, db: Session, start_date: date | None, end_date: date | None, lab_id: UUID | None) -> list[TrendPoint]:
+        return self._metric_trend(db, start_date, end_date, lab_id, OperationMetric.repair_report_count)
 
-    def reservation_status(self) -> list[StatusCount]:
-        return self._status_counts(ReservationStatus, (item.status for item in self.reservations.values()))
-
-    @staticmethod
-    def _status_counts(enum_cls: type, statuses: Iterable[str]) -> list[StatusCount]:
-        counts = {status_: 0 for status_ in enum_cls}
-        for status_ in statuses:
-            counts[status_] += 1
+    def reservation_status(self, db: Session) -> list[StatusCount]:
+        rows = db.execute(select(Reservation.status, func.count()).group_by(Reservation.status)).all()
+        counts = {status_: 0 for status_ in ReservationStatus}
+        for db_status, count in rows:
+            counts[RESERVATION_FROM_DB.get(db_status, db_status)] = count
         return [StatusCount(status=status_, count=count) for status_, count in counts.items()]
 
-    @staticmethod
-    def _trend(
+    def _metric_trend(
+        self,
+        db: Session,
         start_date: date | None,
         end_date: date | None,
         lab_id: UUID | None,
-        value_for_day: Callable[[int], float],
+        value_column: object,
     ) -> list[TrendPoint]:
-        _ = lab_id
         start = start_date or date.today() - timedelta(days=6)
         end = end_date or start + timedelta(days=6)
         if end < start:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="end_date must be later than start_date")
+            raise _bad_request("end_date must be later than start_date")
         days = min((end - start).days + 1, 31)
-        return [TrendPoint(date=start + timedelta(days=index), value=value_for_day(index)) for index in range(days)]
+        wanted_dates = [start + timedelta(days=index) for index in range(days)]
+        statement = select(OperationMetric.metric_date, value_column).where(
+            OperationMetric.period_type == "daily",
+            OperationMetric.metric_date.in_(wanted_dates),
+            OperationMetric.device_id.is_(None),
+        )
+        statement = statement.where(OperationMetric.lab_id == lab_id) if lab_id else statement.where(OperationMetric.lab_id.is_(None))
+        rows = {metric_date: float(value or 0) for metric_date, value in db.execute(statement).all()}
+        return [TrendPoint(date=metric_date, value=rows.get(metric_date, 0.0)) for metric_date in wanted_dates]
+
+    def _ensure_no_reservation_conflict(
+        self,
+        db: Session,
+        device_id: UUID,
+        start_time: datetime,
+        end_time: datetime,
+        ignored_reservation_id: UUID | None = None,
+    ) -> None:
+        conditions = [
+            Reservation.device_id == device_id,
+            Reservation.status == "approved",
+            Reservation.start_time < end_time,
+            Reservation.end_time > start_time,
+        ]
+        if ignored_reservation_id is not None:
+            conditions.append(Reservation.id != ignored_reservation_id)
+        if db.scalar(select(Reservation.id).where(and_(*conditions)).limit(1)):
+            raise _conflict("reservation time conflicts with an approved reservation")
+
+    def _close_repair_report(self, db: Session, report_id: UUID, note: str | None) -> None:
+        report = self._repair_report(db, report_id)
+        report.status = "closed"
+        report.closed_at = utc_now()
+        report.close_note = note
+
+    def _device(self, db: Session, device_id: UUID) -> Device:
+        device = db.get(Device, device_id)
+        if device is None:
+            raise _not_found("device")
+        return device
+
+    def _reservation(self, db: Session, reservation_id: UUID) -> Reservation:
+        reservation = db.get(Reservation, reservation_id)
+        if reservation is None:
+            raise _not_found("reservation")
+        return reservation
+
+    def _repair_report(self, db: Session, report_id: UUID) -> RepairReport:
+        report = db.get(RepairReport, report_id)
+        if report is None:
+            raise _not_found("repair report")
+        return report
+
+    def _work_order(self, db: Session, work_order_id: UUID) -> WorkOrder:
+        work_order = db.get(WorkOrder, work_order_id)
+        if work_order is None:
+            raise _not_found("work order")
+        return work_order
+
+    def _default_id(self, db: Session, model: type[Lab] | type[DeviceCategory], resource: str) -> UUID:
+        item_id = db.scalar(select(model.id).order_by(model.created_at.asc()).limit(1))
+        if item_id is None:
+            raise _bad_request(f"default {resource} not found")
+        return item_id
+
+    def _actor_user_id(self, db: Session, user_id: UUID | None) -> UUID:
+        if user_id is not None and db.get(User, user_id) is not None:
+            return user_id
+        return self._first_user_id(db)
+
+    def _optional_existing_user_id(self, db: Session, user_id: UUID | None) -> UUID | None:
+        if user_id is None:
+            return None
+        return user_id if db.get(User, user_id) is not None else self._first_user_id(db)
+
+    def _first_user_id(self, db: Session) -> UUID:
+        user_id = db.scalar(select(User.id).order_by(User.created_at.asc()).limit(1))
+        if user_id is None:
+            raise _bad_request("user not found")
+        return user_id
+
+    @staticmethod
+    def _number(prefix: str) -> str:
+        return f"{prefix}-{utc_now().strftime('%Y%m%d%H%M%S%f')}"
+
+    @staticmethod
+    def _commit(db: Session) -> None:
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            raise _conflict("request conflicts with existing data") from exc
+
+    @staticmethod
+    def _device_read(device: Device) -> DeviceRead:
+        return DeviceRead(
+            id=device.id,
+            code=device.code,
+            name=device.name,
+            category_id=device.category_id,
+            lab_id=device.lab_id,
+            manager_id=device.manager_id,
+            status=DEVICE_FROM_DB.get(device.status, DeviceStatus.maintenance),
+            health_score=_to_float(device.health_score),
+            purchase_date=device.purchase_date,
+            created_at=device.created_at,
+            updated_at=device.updated_at,
+        )
+
+    @staticmethod
+    def _reservation_read(reservation: Reservation) -> ReservationRead:
+        return ReservationRead(
+            id=reservation.id,
+            device_id=reservation.device_id,
+            applicant_id=reservation.applicant_id,
+            approver_id=reservation.approver_id,
+            start_time=reservation.start_time,
+            end_time=reservation.end_time,
+            purpose=reservation.purpose,
+            status=RESERVATION_FROM_DB.get(reservation.status, ReservationStatus.pending),
+            reject_reason=reservation.reject_reason,
+            created_at=reservation.created_at,
+            updated_at=reservation.updated_at,
+        )
+
+    @staticmethod
+    def _repair_read(report: RepairReport) -> RepairReportRead:
+        return RepairReportRead(
+            id=report.id,
+            device_id=report.device_id,
+            reporter_id=report.reporter_id,
+            fault_type=report.fault_type,
+            description=report.description,
+            status=RepairReportStatus(report.status),
+            created_at=report.created_at,
+            updated_at=report.updated_at,
+        )
+
+    @staticmethod
+    def _work_order_read(work_order: WorkOrder) -> WorkOrderRead:
+        return WorkOrderRead(
+            id=work_order.id,
+            repair_report_id=work_order.repair_report_id,
+            assignee_id=work_order.assignee_id,
+            priority=WorkOrderPriority(work_order.priority),
+            status=WORK_ORDER_FROM_DB.get(work_order.status, WorkOrderStatus.pending),
+            result=work_order.result,
+            started_at=work_order.started_at,
+            finished_at=work_order.finished_at,
+            created_at=work_order.created_at,
+            updated_at=work_order.updated_at,
+        )
 
 
 labops_service = LabOpsService()

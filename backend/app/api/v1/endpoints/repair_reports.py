@@ -1,8 +1,10 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
+from app.db.session import get_db
 from app.schemas.auth import CurrentUser
 from app.schemas.common import ApiResponse, PageData, ok
 from app.schemas.repair_report import RepairReportCreate, RepairReportRead, RepairReportStatus
@@ -19,9 +21,11 @@ def list_repair_reports(
     reporter_id: UUID | None = None,
     status: RepairReportStatus | None = None,
     fault_type: str | None = Query(default=None, max_length=64),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[PageData[RepairReportRead]]:
     return ok(
         labops_service.list_repair_reports(
+            db,
             page=page,
             page_size=page_size,
             device_id=device_id,
@@ -36,10 +40,11 @@ def list_repair_reports(
 def create_repair_report(
     payload: RepairReportCreate,
     current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[RepairReportRead]:
-    return ok(labops_service.create_repair_report(payload, current_user.id))
+    return ok(labops_service.create_repair_report(db, payload, current_user.id))
 
 
 @router.get("/{report_id}", response_model=ApiResponse[RepairReportRead])
-def get_repair_report(report_id: UUID) -> ApiResponse[RepairReportRead]:
-    return ok(labops_service.get_repair_report(report_id))
+def get_repair_report(report_id: UUID, db: Session = Depends(get_db)) -> ApiResponse[RepairReportRead]:
+    return ok(labops_service.get_repair_report(db, report_id))
