@@ -25,14 +25,8 @@ def seeded_device() -> dict:
     return payload["items"][0]
 
 
-def test_device_list_filter_create_and_status_update() -> None:
-    device = seeded_device()
-    assert device["code"] == "DEV-3DP-A01"
-
-    response = client.patch(f"/api/v1/devices/{device['id']}/status", json={"status": "maintenance", "reason": "planned"})
-    assert data(response)["status"] == "maintenance"
-
-    create_response = client.post(
+def create_test_device() -> dict:
+    response = client.post(
         "/api/v1/devices",
         json={
             "code": f"TEST-DEV-{uuid4().hex[:8]}",
@@ -41,8 +35,18 @@ def test_device_list_filter_create_and_status_update() -> None:
             "health_score": 90,
         },
     )
-    created = data(create_response)
-    assert create_response.status_code == 201
+    assert response.status_code == 201
+    return data(response)
+
+
+def test_device_list_filter_create_and_status_update() -> None:
+    device = seeded_device()
+    assert device["code"] == "DEV-3DP-A01"
+
+    response = client.patch(f"/api/v1/devices/{device['id']}/status", json={"status": "maintenance", "reason": "planned"})
+    assert data(response)["status"] == "maintenance"
+
+    created = create_test_device()
     assert created["status"] == "available"
     assert created["lab_id"] is not None
     assert created["category_id"] is not None
@@ -64,7 +68,7 @@ def test_create_device_rejects_duplicate_code() -> None:
 
 
 def test_reservation_create_approve_and_conflict_against_database() -> None:
-    device = seeded_device()
+    device = create_test_device()
     start = datetime.now(timezone.utc) + timedelta(days=14, minutes=uuid4().int % 1000)
     end = start + timedelta(hours=2)
     payload = {
