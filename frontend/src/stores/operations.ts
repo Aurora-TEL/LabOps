@@ -33,9 +33,11 @@ const deviceStatusLabel: Record<BackendDeviceStatus, DeviceStatus['status']> = {
 
 const workOrderStatusLabel: Record<BackendWorkOrderStatus, RepairOrder['status']> = {
   pending: '待派工',
+  assigned: '待派工',
   processing: '处理中',
   finished: '待验收',
-  canceled: '已关闭'
+  canceled: '已关闭',
+  closed: '已关闭'
 };
 
 const priorityLabel: Record<BackendPriority, RepairOrder['priority']> = {
@@ -157,7 +159,7 @@ export const useOperationsStore = defineStore('operations', {
       this.beginAction(`reservation:${reservation.id}:${action}`);
       try {
         if (action === 'approve') await approveReservation(reservation.rawId ?? reservation.id);
-        if (action === 'reject') await rejectReservation(reservation.rawId ?? reservation.id, '演示拒绝：该时段资源调整');
+        if (action === 'reject') await rejectReservation(reservation.rawId ?? reservation.id, '演示驳回：该时段资源调整');
         if (action === 'cancel') await cancelReservation(reservation.rawId ?? reservation.id);
         this.success = '预约状态已更新';
         await this.load();

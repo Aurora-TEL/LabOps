@@ -56,6 +56,8 @@ def insert_ignore(db: Session, model: type[Any], rows: list[dict[str, Any]], ind
 
 def seed_security(db: Session) -> dict[str, uuid.UUID]:
     role_rows = [
+        {"id": stable_uuid("role:ordinary_user"), "code": "ordinary_user", "name": "Ordinary User", "is_system": True},
+        {"id": stable_uuid("role:device_owner"), "code": "device_owner", "name": "Device Owner", "is_system": True},
         {"id": stable_uuid("role:student"), "code": "student", "name": "Student", "is_system": True},
         {"id": stable_uuid("role:teacher"), "code": "teacher", "name": "Teacher", "is_system": True},
         {"id": stable_uuid("role:lab_admin"), "code": "lab_admin", "name": "Lab Admin", "is_system": True},
@@ -96,6 +98,26 @@ def seed_security(db: Session) -> dict[str, uuid.UUID]:
         for code in permission_codes
     ]
     user_rows = [
+        {
+            "id": stable_uuid("user:ordinary01"),
+            "username": "ordinary01",
+            "password_hash": DEMO_PASSWORD_HASH,
+            "real_name": "Ordinary User Demo",
+            "email": "ordinary01@example.edu",
+            "department": "Mechanical Engineering",
+            "student_no": "U2026001",
+            "status": "active",
+        },
+        {
+            "id": stable_uuid("user:owner01"),
+            "username": "owner01",
+            "password_hash": DEMO_PASSWORD_HASH,
+            "real_name": "Device Owner Demo",
+            "email": "owner01@example.edu",
+            "department": "Smart Manufacturing Lab",
+            "employee_no": "O2026001",
+            "status": "active",
+        },
         {
             "id": stable_uuid("user:student01"),
             "username": "student01",
@@ -149,6 +171,8 @@ def seed_security(db: Session) -> dict[str, uuid.UUID]:
         db,
         UserRole,
         [
+            {"user_id": user_ids["ordinary01"], "role_id": role_ids["ordinary_user"]},
+            {"user_id": user_ids["owner01"], "role_id": role_ids["device_owner"]},
             {"user_id": user_ids["student01"], "role_id": role_ids["student"]},
             {"user_id": user_ids["teacher01"], "role_id": role_ids["teacher"]},
             {"user_id": user_ids["labadmin01"], "role_id": role_ids["lab_admin"]},
@@ -157,6 +181,21 @@ def seed_security(db: Session) -> dict[str, uuid.UUID]:
         ["user_id", "role_id"],
     )
     role_permission_map = {
+        "ordinary_user": ["dashboard:view", "device:view", "reservation:view_self", "reservation:create", "reservation:cancel_self", "repair:view_self", "repair:create"],
+        "device_owner": [
+            "dashboard:view",
+            "analytics:view",
+            "device:view",
+            "device:update",
+            "reservation:view_all",
+            "reservation:approve",
+            "reservation:cancel_all",
+            "repair:view_all",
+            "repair:accept",
+            "work_order:create",
+            "work_order:update",
+            "work_order:close",
+        ],
         "student": ["dashboard:view", "device:view", "reservation:view_self", "reservation:create", "reservation:cancel_self", "repair:view_self", "repair:create"],
         "teacher": ["dashboard:view", "analytics:view", "device:view", "reservation:view_all", "reservation:approve", "repair:view_all"],
         "lab_admin": [code for code in permission_codes if not code.startswith(("user:", "role:"))],
@@ -204,6 +243,7 @@ def seed_assets(db: Session, user_ids: dict[str, uuid.UUID]) -> tuple[dict[str, 
         ("DEV-MIC-M01", "Microscope M01", "analysis", "LAB-EI", "idle", "96.00"),
         ("DEV-BIO-B01", "Bioreactor B01", "biology", "LAB-IOT", "disabled", "88.00"),
     ]
+    owner_device_codes = {"DEV-3DP-A01", "DEV-LAS-L01", "DEV-CNC-C01"}
     device_rows = [
         {
             "id": stable_uuid(f"device:{code}"),
@@ -211,7 +251,7 @@ def seed_assets(db: Session, user_ids: dict[str, uuid.UUID]) -> tuple[dict[str, 
             "name": name,
             "category_id": category_ids[category],
             "lab_id": lab_ids[lab],
-            "manager_id": user_ids["labadmin01"],
+            "manager_id": user_ids["owner01"] if code in owner_device_codes else user_ids["labadmin01"],
             "status": status,
             "health_score": Decimal(score),
             "model": f"{code}-MODEL",
@@ -230,10 +270,10 @@ def seed_assets(db: Session, user_ids: dict[str, uuid.UUID]) -> tuple[dict[str, 
 def seed_business(db: Session, user_ids: dict[str, uuid.UUID], lab_ids: dict[str, uuid.UUID], device_ids: dict[str, uuid.UUID]) -> None:
     now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     reservations = [
-        ("RSV-20260626-001", "DEV-3DP-A01", "approved", now + timedelta(days=1, hours=1), now + timedelta(days=1, hours=3), user_ids["teacher01"]),
+        ("RSV-20260626-001", "DEV-3DP-A01", "approved", now + timedelta(days=1, hours=1), now + timedelta(days=1, hours=3), user_ids["owner01"]),
         ("RSV-20260626-002", "DEV-OSC-01", "pending", now + timedelta(days=1, hours=4), now + timedelta(days=1, hours=6), None),
         ("RSV-20260626-003", "DEV-MIC-M01", "completed", now - timedelta(days=2, hours=2), now - timedelta(days=2), user_ids["teacher01"]),
-        ("RSV-20260626-004", "DEV-CNC-C01", "rejected", now + timedelta(days=2), now + timedelta(days=2, hours=2), user_ids["teacher01"]),
+        ("RSV-20260626-004", "DEV-CNC-C01", "rejected", now + timedelta(days=2), now + timedelta(days=2, hours=2), user_ids["owner01"]),
         ("RSV-20260626-005", "DEV-IOT-GW01", "cancelled", now - timedelta(days=1), now - timedelta(days=1) + timedelta(hours=2), None),
     ]
     upsert_by_id(
@@ -244,7 +284,7 @@ def seed_business(db: Session, user_ids: dict[str, uuid.UUID], lab_ids: dict[str
                 "id": stable_uuid(f"reservation:{no}"),
                 "reservation_no": no,
                 "device_id": device_ids[device_code],
-                "applicant_id": user_ids["student01"],
+                "applicant_id": user_ids["ordinary01"],
                 "approver_id": approver_id,
                 "start_time": start_time,
                 "end_time": end_time,
@@ -275,8 +315,8 @@ def seed_business(db: Session, user_ids: dict[str, uuid.UUID], lab_ids: dict[str
                 "id": stable_uuid(f"repair:{no}"),
                 "report_no": no,
                 "device_id": device_ids[device_code],
-                "reporter_id": user_ids["student01"],
-                "accepted_by_id": user_ids["labadmin01"] if status != "submitted" else None,
+                "reporter_id": user_ids["ordinary01"],
+                "accepted_by_id": user_ids["owner01"] if device_code in {"DEV-LAS-L01"} and status != "submitted" else user_ids["labadmin01"] if status != "submitted" else None,
                 "fault_type": fault_type,
                 "urgency": urgency,
                 "description": f"{device_code} demo fault report",
@@ -303,8 +343,8 @@ def seed_business(db: Session, user_ids: dict[str, uuid.UUID], lab_ids: dict[str
                 "work_order_no": no,
                 "repair_report_id": stable_uuid(f"repair:{report_no}"),
                 "device_id": device_ids[device_code],
-                "creator_id": user_ids["labadmin01"],
-                "assignee_id": user_ids["labadmin01"],
+                "creator_id": user_ids["owner01"] if device_code in {"DEV-LAS-L01"} else user_ids["labadmin01"],
+                "assignee_id": user_ids["owner01"] if device_code in {"DEV-LAS-L01"} else user_ids["labadmin01"],
                 "priority": priority,
                 "status": status,
                 "planned_start_at": now - timedelta(hours=4),
@@ -334,7 +374,7 @@ def seed_business(db: Session, user_ids: dict[str, uuid.UUID], lab_ids: dict[str
                 "id": stable_uuid(f"maintenance:{device_code}:{maintenance_type}"),
                 "device_id": device_ids[device_code],
                 "work_order_id": stable_uuid(f"work-order:{work_order_no}") if work_order_no else None,
-                "maintainer_id": user_ids["labadmin01"],
+                "maintainer_id": user_ids["owner01"] if device_code in {"DEV-LAS-L01", "DEV-3DP-A01"} else user_ids["labadmin01"],
                 "maintenance_type": maintenance_type,
                 "title": title,
                 "content": f"{title} for demo dataset",

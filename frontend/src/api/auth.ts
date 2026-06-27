@@ -5,6 +5,7 @@ export interface CurrentUser {
   username: string;
   real_name: string;
   roles: string[];
+  permissions: string[];
 }
 
 export interface LoginResult {

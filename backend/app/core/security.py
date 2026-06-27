@@ -57,3 +57,12 @@ def require_permissions(*required_permissions: str):
         return current_user
 
     return dependency
+
+
+def require_any_permission(*allowed_permissions: str):
+    async def dependency(current_user: Annotated[CurrentUser, Depends(get_current_user)]) -> CurrentUser:
+        if not set(current_user.permissions).intersection(allowed_permissions):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient permission")
+        return current_user
+
+    return dependency

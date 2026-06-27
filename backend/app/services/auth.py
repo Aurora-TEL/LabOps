@@ -26,6 +26,41 @@ class DisabledUserError(Exception):
 
 
 DEMO_USERS: dict[str, CurrentUser] = {
+    "ordinary01": CurrentUser(
+        id=UUID("00000000-0000-0000-0000-000000000105"),
+        username="ordinary01",
+        real_name="Ordinary User Demo",
+        roles=["ordinary_user"],
+        permissions=[
+            "dashboard:view",
+            "device:view",
+            "reservation:view_self",
+            "reservation:create",
+            "reservation:cancel_self",
+            "repair:view_self",
+            "repair:create",
+        ],
+    ),
+    "owner01": CurrentUser(
+        id=UUID("00000000-0000-0000-0000-000000000106"),
+        username="owner01",
+        real_name="Device Owner Demo",
+        roles=["device_owner"],
+        permissions=[
+            "dashboard:view",
+            "analytics:view",
+            "device:view",
+            "device:update",
+            "reservation:view_all",
+            "reservation:approve",
+            "reservation:cancel_all",
+            "repair:view_all",
+            "repair:accept",
+            "work_order:create",
+            "work_order:update",
+            "work_order:close",
+        ],
+    ),
     "student01": CurrentUser(
         id=UUID("00000000-0000-0000-0000-000000000101"),
         username="student01",

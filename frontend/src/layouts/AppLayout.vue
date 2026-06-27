@@ -11,6 +11,7 @@ import {
   MonitorCog,
   Search,
   Settings,
+  UserRoundCheck,
   Wrench
 } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
@@ -25,17 +26,35 @@ const collapsed = ref(false);
 const operationsStore = useOperationsStore();
 const authStore = useAuthStore();
 
-const navItems = [
-  { label: '运营首页', path: '/dashboard', icon: LayoutDashboard },
-  { label: '设备状态', path: '/devices', icon: MonitorCog },
-  { label: '预约管理', path: '/reservations', icon: CalendarClock },
-  { label: '报修工单', path: '/repairs', icon: Wrench },
-  { label: '数据分析', path: '/analytics', icon: BarChart3 },
-  { label: '系统设置', path: '/system', icon: Settings }
+const allNavItems = [
+  { label: '我的预约', path: '/ordinary', icon: UserRoundCheck, roles: ['ordinary_user', 'student'] },
+  { label: '负责人工作台', path: '/owner', icon: Gauge, roles: ['device_owner'] },
+  { label: '运营首页', path: '/dashboard', icon: LayoutDashboard, permissions: ['dashboard:view'] },
+  { label: '设备状态', path: '/devices', icon: MonitorCog, permissions: ['device:view'] },
+  { label: '预约管理', path: '/reservations', icon: CalendarClock, permissions: ['reservation:view_self', 'reservation:view_all'] },
+  { label: '报修工单', path: '/repairs', icon: Wrench, permissions: ['repair:view_self', 'repair:view_all'] },
+  { label: '数据分析', path: '/analytics', icon: BarChart3, permissions: ['analytics:view'] },
+  { label: '系统设置', path: '/system', icon: Settings, permissions: ['user:manage', 'role:manage'] }
 ];
 
+const navItems = computed(() =>
+  allNavItems.filter((item) => {
+    if (!authStore.isAdminUser) {
+      if (authStore.isDeviceOwner) return item.path === '/owner';
+      if (authStore.isOrdinaryUser) return item.path === '/ordinary';
+    }
+    if ('roles' in item && item.roles) return authStore.hasAnyRole(item.roles);
+    if ('permissions' in item && item.permissions) return authStore.hasAnyPermission(item.permissions);
+    return true;
+  })
+);
 const title = computed(() => String(route.meta.title ?? '运营首页'));
 const avatarText = computed(() => authStore.displayName.slice(0, 1));
+const shellLabel = computed(() => {
+  if (authStore.isDeviceOwner && !authStore.isAdminUser) return '设备运维中心';
+  if (authStore.isOrdinaryUser && !authStore.isAdminUser) return '实验预约自助台';
+  return '实验室运营中心';
+});
 
 async function signOut() {
   await authStore.signOut();
@@ -55,11 +74,11 @@ onMounted(() => {
 <template>
   <div class="shell" :class="{ collapsed }">
     <aside class="sidebar">
-      <RouterLink class="brand" to="/dashboard" aria-label="LabOps">
+      <RouterLink class="brand" :to="authStore.landingPath" aria-label="LabOps">
         <span class="brand-mark"><Factory :size="22" /></span>
         <span class="brand-text">
           <strong>LabOps</strong>
-          <small>智能制造运营平台</small>
+          <small>{{ shellLabel }}</small>
         </span>
       </RouterLink>
 
@@ -86,7 +105,7 @@ onMounted(() => {
             <Menu :size="20" />
           </button>
           <div>
-            <p class="top-kicker">制造运营中心</p>
+            <p class="top-kicker">{{ shellLabel }}</p>
             <h1>{{ title }}</h1>
           </div>
         </div>

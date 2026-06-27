@@ -2,91 +2,91 @@ import type { WorkbenchData } from '@/types';
 
 export const workbenchData: WorkbenchData = {
   metrics: [
-    { label: '今日设备开机率', value: '86.4', unit: '%', trend: 'up', delta: '+4.8%', accent: 'blue' },
+    { label: '设备可用率', value: '86.4', unit: '%', trend: 'up', delta: '+4.8%', accent: 'blue' },
     { label: '待审核预约', value: '18', unit: '单', trend: 'down', delta: '-6', accent: 'orange' },
     { label: '处理中工单', value: '27', unit: '项', trend: 'up', delta: '+3', accent: 'violet' },
     { label: '综合 OEE', value: '78.9', unit: '%', trend: 'flat', delta: '持平', accent: 'green' }
   ],
   deviceStatuses: [
     {
-      id: 'EQ-1008',
-      name: '五轴加工中心',
-      workshop: '精密制造一车间',
-      status: '运行中',
+      id: 'DEV-3DP-A01',
+      name: '3D Printer A01',
+      workshop: '智能制造实验室',
+      status: '待机',
       utilization: 91,
       temperature: 42,
       nextMaintenance: '2026-07-03'
     },
     {
-      id: 'EQ-1021',
-      name: '工业机器人臂',
-      workshop: '自动化装配线',
-      status: '待机',
-      utilization: 63,
-      temperature: 35,
-      nextMaintenance: '2026-07-08'
+      id: 'DEV-LAS-L01',
+      name: 'Laser Cutter L01',
+      workshop: '智能制造实验室',
+      status: '运行中',
+      utilization: 84,
+      temperature: 48,
+      nextMaintenance: '2026-07-12'
     },
     {
-      id: 'EQ-1037',
-      name: '环境试验箱',
-      workshop: '可靠性实验室',
+      id: 'DEV-NET-01',
+      name: 'Network Analyzer NET-01',
+      workshop: '电子信息实验室',
       status: '维护中',
       utilization: 38,
       temperature: 29,
       nextMaintenance: '2026-06-28'
     },
     {
-      id: 'EQ-1055',
-      name: '激光切割机',
-      workshop: '钣金加工区',
-      status: '运行中',
-      utilization: 84,
-      temperature: 48,
-      nextMaintenance: '2026-07-12'
+      id: 'DEV-IOT-GW01',
+      name: 'IoT Gateway GW01',
+      workshop: '传感与物联网实验室',
+      status: '待机',
+      utilization: 76,
+      temperature: 36,
+      nextMaintenance: '2026-07-08'
     }
   ],
   reservations: [
     {
       id: 'RSV-240621',
-      device: '环境试验箱',
-      applicant: '周若琳',
-      department: '质量工程部',
+      device: '3D Printer A01',
+      applicant: '当前用户',
+      department: '机械工程学院',
       slot: '09:00-11:30',
-      status: '进行中'
+      status: '已确认'
     },
     {
       id: 'RSV-240622',
-      device: '三坐标测量仪',
-      applicant: '陈启明',
-      department: '研发中心',
+      device: 'Laser Cutter L01',
+      applicant: '当前用户',
+      department: '机械工程学院',
       slot: '13:30-15:00',
       status: '待审核'
     },
     {
       id: 'RSV-240623',
-      device: '五轴加工中心',
-      applicant: '李思远',
-      department: '制造工程部',
+      device: 'Network Analyzer NET-01',
+      applicant: '用户 1024',
+      department: '电子信息学院',
       slot: '15:30-18:00',
-      status: '已确认'
+      status: '已完成'
     }
   ],
   repairReports: [
     {
       id: 'REP-20260626-014',
-      device: '五轴加工中心',
-      faultType: 'hardware',
-      description: '主轴振动值超过预警阈值',
-      reporter: '周若琳',
+      device: 'Laser Cutter L01',
+      faultType: 'mechanical',
+      description: '激光头定位偏移，切割轨迹不稳定',
+      reporter: '当前用户',
       status: '已派单',
       createdAt: '08:20'
     },
     {
       id: 'REP-20260626-015',
-      device: '自动化装配线',
+      device: 'Network Analyzer NET-01',
       faultType: 'network',
-      description: '扫码枪间歇性断连，影响入库确认',
-      reporter: '陈启明',
+      description: '设备采集链路间歇性断开，影响实验记录',
+      reporter: '用户 1024',
       status: '已提交',
       createdAt: '10:05'
     }
@@ -94,28 +94,28 @@ export const workbenchData: WorkbenchData = {
   repairOrders: [
     {
       id: 'WO-20260626-019',
-      title: '主轴振动值超过预警阈值',
-      device: '五轴加工中心',
+      title: '激光头定位偏移，切割轨迹不稳定',
+      device: 'Laser Cutter L01',
       priority: '高',
-      assignee: '王工',
+      assignee: 'Device Owner Demo',
       createdAt: '08:42',
       status: '处理中'
     },
     {
       id: 'WO-20260626-020',
-      title: '扫码枪间歇性断连',
-      device: '自动化装配线',
+      title: '设备采集链路间歇性断开',
+      device: 'Network Analyzer NET-01',
       priority: '中',
-      assignee: '刘工',
+      assignee: 'Lab Admin Demo',
       createdAt: '10:15',
       status: '待派工'
     },
     {
       id: 'WO-20260625-087',
-      title: '冷却液液位传感器需校准',
-      device: '激光切割机',
+      title: '3D 打印平台需要校准',
+      device: '3D Printer A01',
       priority: '低',
-      assignee: '赵工',
+      assignee: 'Device Owner Demo',
       createdAt: '昨天',
       status: '待验收'
     }
@@ -138,9 +138,9 @@ export const workbenchData: WorkbenchData = {
     { name: '6月', value: 71 }
   ],
   productionRecords: [
-    { line: '精密制造一线', output: 1260, passRate: 98.4, oee: 82.1, energy: 2140 },
-    { line: '自动化装配线', output: 1840, passRate: 96.8, oee: 79.3, energy: 1886 },
-    { line: '钣金加工区', output: 920, passRate: 97.2, oee: 74.5, energy: 2435 },
-    { line: '可靠性实验室', output: 138, passRate: 99.1, oee: 68.7, energy: 736 }
+    { line: '智能制造实验室', output: 1260, passRate: 98.4, oee: 82.1, energy: 2140 },
+    { line: '电子信息实验室', output: 1840, passRate: 96.8, oee: 79.3, energy: 1886 },
+    { line: '传感与物联网实验室', output: 920, passRate: 97.2, oee: 74.5, energy: 2435 },
+    { line: '可靠性测试室', output: 138, passRate: 99.1, oee: 68.7, energy: 736 }
   ]
 };

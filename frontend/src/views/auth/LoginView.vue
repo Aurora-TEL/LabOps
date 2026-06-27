@@ -10,13 +10,26 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const form = reactive({
-  username: 'admin',
-  password: 'password'
+  username: 'ordinary01',
+  password: 'labops123'
 });
+
+const demoAccounts = [
+  { label: '普通用户', username: 'ordinary01', password: 'labops123', note: '预约设备、提交报修、查看个人记录' },
+  { label: '设备负责人', username: 'owner01', password: 'labops123', note: '设备状态维护、预约审批、维修工单' },
+  { label: '实验室管理员', username: 'labadmin01', password: 'labops123', note: '全局设备、预约、报修运营后台' },
+  { label: '系统管理员', username: 'admin', password: 'password', note: '用户角色、系统配置与全局管理' }
+];
+
+function useAccount(account: (typeof demoAccounts)[number]) {
+  form.username = account.username;
+  form.password = account.password;
+}
 
 async function submitLogin() {
   await authStore.signIn(form.username, form.password);
-  await router.replace(String(route.query.redirect ?? '/dashboard'));
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : authStore.landingPath;
+  await router.replace(redirect === '/dashboard' && !authStore.isAdminUser ? authStore.landingPath : redirect);
 }
 </script>
 
@@ -24,20 +37,22 @@ async function submitLogin() {
   <main class="login-page">
     <section class="login-shell">
       <div class="login-copy">
-        <p class="eyebrow">LabOps v1.2</p>
-        <h1>登录运营中心</h1>
-        <p class="subtle">演示账号已预填。登录后前端会保存 token，并通过 /auth/me 恢复当前用户。</p>
-        <div class="login-metrics">
-          <span>设备台账</span>
-          <span>预约审批</span>
-          <span>报修工单</span>
+        <p class="eyebrow">LabOps v1.3</p>
+        <h1>智能实验室设备预约与运维平台</h1>
+        <p class="subtle">按身份进入不同前端：普通用户使用预约报修自助台，设备负责人进入运维工作台，管理员进入完整运营后台。</p>
+        <div class="account-grid">
+          <button v-for="account in demoAccounts" :key="account.username" class="account-card" type="button" @click="useAccount(account)">
+            <strong>{{ account.label }}</strong>
+            <span>{{ account.username }}</span>
+            <small>{{ account.note }}</small>
+          </button>
         </div>
       </div>
 
       <form class="panel login-form" @submit.prevent="submitLogin">
         <div>
           <h2>账号登录</h2>
-          <p class="subtle">用于答辩演示的轻量认证流程</p>
+          <p class="subtle">选择左侧演示账号后登录，系统会自动进入对应工作台。</p>
         </div>
 
         <label class="form-field">
@@ -79,36 +94,60 @@ async function submitLogin() {
 
 .login-shell {
   display: grid;
-  width: min(980px, 100%);
+  width: min(1040px, 100%);
   grid-template-columns: minmax(0, 1fr) 390px;
   gap: 28px;
   align-items: center;
 }
 
 .login-copy h1 {
-  max-width: 520px;
+  max-width: 620px;
   font-size: 44px;
 }
 
 .login-copy .subtle {
-  max-width: 560px;
+  max-width: 650px;
 }
 
-.login-metrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   margin-top: 24px;
 }
 
-.login-metrics span {
+.account-card {
+  display: flex;
+  min-height: 122px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
   border: 1px solid #d8e5f4;
-  border-radius: 999px;
+  border-radius: 8px;
   background: #fff;
+  color: #172033;
+  padding: 14px;
+  text-align: left;
+  box-shadow: 0 12px 28px rgba(26, 57, 96, 0.08);
+}
+
+.account-card:hover {
+  border-color: var(--blue);
+}
+
+.account-card strong {
+  font-size: 16px;
+}
+
+.account-card span {
   color: var(--blue);
-  padding: 8px 12px;
   font-size: 13px;
   font-weight: 900;
+}
+
+.account-card small {
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .login-form {
@@ -152,7 +191,8 @@ async function submitLogin() {
 }
 
 @media (max-width: 820px) {
-  .login-shell {
+  .login-shell,
+  .account-grid {
     grid-template-columns: 1fr;
   }
 

@@ -4,8 +4,8 @@ import type { DeviceStatus, Metric, ProductionRecord, RepairOrder, RepairReport,
 
 export type BackendDeviceStatus = 'available' | 'reserved' | 'in_use' | 'maintenance' | 'disabled';
 export type BackendReservationStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'completed';
-export type BackendRepairReportStatus = 'submitted' | 'accepted' | 'assigned' | 'closed';
-export type BackendWorkOrderStatus = 'pending' | 'processing' | 'finished' | 'canceled';
+export type BackendRepairReportStatus = 'submitted' | 'accepted' | 'assigned' | 'processing' | 'finished' | 'closed';
+export type BackendWorkOrderStatus = 'pending' | 'assigned' | 'processing' | 'finished' | 'canceled' | 'closed';
 export type BackendPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 interface DashboardSummary {
@@ -28,6 +28,7 @@ export interface BackendDevice {
   status: BackendDeviceStatus;
   health_score?: number | null;
   purchase_date?: string | null;
+  manager_id?: string | null;
 }
 
 export interface BackendReservation {
@@ -112,14 +113,18 @@ const repairReportStatusMap: Record<BackendRepairReportStatus, RepairReport['sta
   submitted: '已提交',
   accepted: '已受理',
   assigned: '已派单',
+  processing: '已派单',
+  finished: '已派单',
   closed: '已关闭'
 };
 
 const workOrderStatusMap: Record<BackendWorkOrderStatus, RepairOrder['status']> = {
   pending: '待派工',
+  assigned: '待派工',
   processing: '处理中',
   finished: '待验收',
-  canceled: '已关闭'
+  canceled: '已关闭',
+  closed: '已关闭'
 };
 
 const priorityMap: Record<BackendPriority, RepairOrder['priority']> = {
@@ -157,7 +162,7 @@ function shortId(prefix: string, id: string) {
 }
 
 function findDeviceName(deviceId: string, devices: DeviceStatus[], fallback: string) {
-  return devices.find((candidate) => candidate.rawId === deviceId || candidate.id === deviceId || candidate.id.includes(deviceId.slice(0, 8)))?.name ?? fallback;
+  return devices.find((candidate) => candidate.rawId === deviceId || candidate.id === deviceId)?.name ?? fallback;
 }
 
 function buildMetrics(summary: DashboardSummary): Metric[] {
@@ -252,21 +257,29 @@ function mapProductionRecords(devices: DeviceStatus[]): ProductionRecord[] {
   });
 }
 
+async function maybeLoadWorkOrders(devices: DeviceStatus[], repairReports: RepairReport[]) {
+  try {
+    const workOrdersPage = await requestApi<PageData<BackendWorkOrder>>('/work-orders?page_size=20');
+    return workOrdersPage.items.map((item, index) => mapWorkOrder(item, index, devices, repairReports));
+  } catch {
+    return [];
+  }
+}
+
 async function loadApiWorkbenchData(): Promise<WorkbenchData> {
-  const [summary, utilization, repairTrend, devicesPage, reservationsPage, repairReportsPage, workOrdersPage] = await Promise.all([
+  const [summary, utilization, repairTrend, devicesPage, reservationsPage, repairReportsPage] = await Promise.all([
     requestApi<DashboardSummary>('/dashboard/summary'),
     requestApi<TrendPoint[]>('/dashboard/device-utilization'),
     requestApi<TrendPoint[]>('/dashboard/repair-trend'),
     requestApi<PageData<BackendDevice>>('/devices?page_size=20'),
     requestApi<PageData<BackendReservation>>('/reservations?page_size=20'),
-    requestApi<PageData<BackendRepairReport>>('/repair-reports?page_size=20'),
-    requestApi<PageData<BackendWorkOrder>>('/work-orders?page_size=20')
+    requestApi<PageData<BackendRepairReport>>('/repair-reports?page_size=20')
   ]);
 
   const deviceStatuses = devicesPage.items.map(mapDevice);
   const reservations = reservationsPage.items.map((item, index) => mapReservation(item, index, deviceStatuses));
   const repairReports = repairReportsPage.items.map((item, index) => mapRepairReport(item, index, deviceStatuses));
-  const repairOrders = workOrdersPage.items.map((item, index) => mapWorkOrder(item, index, deviceStatuses, repairReports));
+  const repairOrders = await maybeLoadWorkOrders(deviceStatuses, repairReports);
 
   return {
     metrics: buildMetrics(summary),

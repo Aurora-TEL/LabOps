@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app.core.security import require_permissions, require_roles
+from app.core.security import require_any_permission, require_permissions, require_roles
 from app.main import app
 from app.schemas.auth import CurrentUser
 
@@ -49,6 +49,19 @@ def test_me_returns_user_from_bearer_token() -> None:
     assert "reservation:create" in payload["permissions"]
 
 
+def test_new_demo_roles_login_with_expected_permissions() -> None:
+    ordinary = data(client.post("/api/v1/auth/login", json={"username": "ordinary01", "password": "labops123"}))["user"]
+    owner = data(client.post("/api/v1/auth/login", json={"username": "owner01", "password": "labops123"}))["user"]
+
+    assert ordinary["roles"] == ["ordinary_user"]
+    assert "reservation:create" in ordinary["permissions"]
+    assert "work_order:create" not in ordinary["permissions"]
+    assert owner["roles"] == ["device_owner"]
+    assert "device:update" in owner["permissions"]
+    assert "work_order:create" in owner["permissions"]
+    assert "user:manage" not in owner["permissions"]
+
+
 def test_me_rejects_missing_token() -> None:
     response = client.get("/api/v1/auth/me")
 
@@ -68,6 +81,7 @@ def test_require_roles_and_permissions_helpers() -> None:
 
     assert asyncio.run(require_roles("lab_admin")(user)) == user
     assert asyncio.run(require_permissions("device:update")(user)) == user
+    assert asyncio.run(require_any_permission("device:view", "device:update")(user)) == user
 
     with pytest.raises(HTTPException) as role_error:
         asyncio.run(require_roles("system_admin")(user))
@@ -76,3 +90,7 @@ def test_require_roles_and_permissions_helpers() -> None:
     with pytest.raises(HTTPException) as permission_error:
         asyncio.run(require_permissions("role:manage")(user))
     assert permission_error.value.status_code == 403
+
+    with pytest.raises(HTTPException) as any_permission_error:
+        asyncio.run(require_any_permission("role:manage", "user:manage")(user))
+    assert any_permission_error.value.status_code == 403

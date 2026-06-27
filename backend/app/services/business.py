@@ -96,8 +96,11 @@ class LabOpsService:
         lab_id: UUID | None = None,
         category_id: UUID | None = None,
         status: DeviceStatus | None = None,
+        manager_id: UUID | None = None,
     ) -> PageData[DeviceRead]:
         statement = select(Device)
+        if manager_id is not None:
+            statement = statement.where(Device.manager_id == manager_id)
         if lab_id is not None:
             statement = statement.where(Device.lab_id == lab_id)
         if category_id is not None:
@@ -176,8 +179,11 @@ class LabOpsService:
         status: ReservationStatus | None = None,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
+        device_manager_id: UUID | None = None,
     ) -> PageData[ReservationRead]:
         statement = select(Reservation)
+        if device_manager_id is not None:
+            statement = statement.join(Device, Reservation.device_id == Device.id).where(Device.manager_id == device_manager_id)
         if device_id is not None:
             statement = statement.where(Reservation.device_id == device_id)
         if applicant_id is not None:
@@ -259,8 +265,11 @@ class LabOpsService:
         reporter_id: UUID | None = None,
         status: RepairReportStatus | None = None,
         fault_type: str | None = None,
+        device_manager_id: UUID | None = None,
     ) -> PageData[RepairReportRead]:
         statement = select(RepairReport)
+        if device_manager_id is not None:
+            statement = statement.join(Device, RepairReport.device_id == Device.id).where(Device.manager_id == device_manager_id)
         if device_id is not None:
             statement = statement.where(RepairReport.device_id == device_id)
         if reporter_id is not None:
@@ -306,8 +315,11 @@ class LabOpsService:
         assignee_id: UUID | None = None,
         status: WorkOrderStatus | None = None,
         priority: WorkOrderPriority | None = None,
+        device_manager_id: UUID | None = None,
     ) -> PageData[WorkOrderRead]:
         statement = select(WorkOrder)
+        if device_manager_id is not None:
+            statement = statement.join(Device, WorkOrder.device_id == Device.id).where(Device.manager_id == device_manager_id)
         if assignee_id is not None:
             statement = statement.where(WorkOrder.assignee_id == assignee_id)
         if status is not None:
@@ -373,33 +385,98 @@ class LabOpsService:
         db.refresh(work_order)
         return self._work_order_read(work_order)
 
-    def dashboard_summary(self, db: Session) -> DashboardSummary:
+    def dashboard_summary(
+        self,
+        db: Session,
+        *,
+        applicant_id: UUID | None = None,
+        reporter_id: UUID | None = None,
+        device_manager_id: UUID | None = None,
+    ) -> DashboardSummary:
         today_start = datetime.combine(date.today(), datetime.min.time()).astimezone()
         tomorrow_start = today_start + timedelta(days=1)
+        device_count_statement = select(func.count()).select_from(Device)
+        available_count_statement = select(func.count()).select_from(Device).where(Device.status == "idle")
+        reservation_count_statement = (
+            select(func.count())
+            .select_from(Reservation)
+            .where(Reservation.start_time >= today_start, Reservation.start_time < tomorrow_start)
+        )
+        repair_count_statement = select(func.count()).select_from(RepairReport).where(RepairReport.status == "submitted")
+        work_order_count_statement = select(func.count()).select_from(WorkOrder).where(WorkOrder.status.in_(["assigned", "processing"]))
+
+        if device_manager_id is not None:
+            device_count_statement = device_count_statement.where(Device.manager_id == device_manager_id)
+            available_count_statement = available_count_statement.where(Device.manager_id == device_manager_id)
+            reservation_count_statement = reservation_count_statement.join(Device, Reservation.device_id == Device.id).where(Device.manager_id == device_manager_id)
+            repair_count_statement = repair_count_statement.join(Device, RepairReport.device_id == Device.id).where(Device.manager_id == device_manager_id)
+            work_order_count_statement = work_order_count_statement.join(Device, WorkOrder.device_id == Device.id).where(Device.manager_id == device_manager_id)
+        if applicant_id is not None:
+            reservation_count_statement = reservation_count_statement.where(Reservation.applicant_id == applicant_id)
+            work_order_count_statement = work_order_count_statement.where(WorkOrder.id.is_(None))
+        if reporter_id is not None:
+            repair_count_statement = repair_count_statement.where(RepairReport.reporter_id == reporter_id)
+
         return DashboardSummary(
-            device_total=db.scalar(select(func.count()).select_from(Device)) or 0,
-            device_available=db.scalar(select(func.count()).select_from(Device).where(Device.status == "idle")) or 0,
-            today_reservations=db.scalar(
-                select(func.count())
-                .select_from(Reservation)
-                .where(Reservation.start_time >= today_start, Reservation.start_time < tomorrow_start)
-            )
-            or 0,
-            pending_repairs=db.scalar(select(func.count()).select_from(RepairReport).where(RepairReport.status == "submitted")) or 0,
-            open_work_orders=db.scalar(
-                select(func.count()).select_from(WorkOrder).where(WorkOrder.status.in_(["assigned", "processing"]))
-            )
-            or 0,
+            device_total=db.scalar(device_count_statement) or 0,
+            device_available=db.scalar(available_count_statement) or 0,
+            today_reservations=db.scalar(reservation_count_statement) or 0,
+            pending_repairs=db.scalar(repair_count_statement) or 0,
+            open_work_orders=db.scalar(work_order_count_statement) or 0,
         )
 
-    def device_utilization(self, db: Session, start_date: date | None, end_date: date | None, lab_id: UUID | None) -> list[TrendPoint]:
+    def device_utilization(
+        self,
+        db: Session,
+        start_date: date | None,
+        end_date: date | None,
+        lab_id: UUID | None,
+        device_manager_id: UUID | None = None,
+    ) -> list[TrendPoint]:
+        if device_manager_id is not None:
+            start = start_date or date.today() - timedelta(days=6)
+            end = end_date or start + timedelta(days=6)
+            days = min((end - start).days + 1, 31)
+            avg_health = db.scalar(select(func.avg(Device.health_score)).where(Device.manager_id == device_manager_id)) or Decimal("0")
+            return [TrendPoint(date=start + timedelta(days=index), value=float(avg_health)) for index in range(days)]
         return self._metric_trend(db, start_date, end_date, lab_id, OperationMetric.utilization_rate)
 
-    def repair_trend(self, db: Session, start_date: date | None, end_date: date | None, lab_id: UUID | None) -> list[TrendPoint]:
+    def repair_trend(
+        self,
+        db: Session,
+        start_date: date | None,
+        end_date: date | None,
+        lab_id: UUID | None,
+        reporter_id: UUID | None = None,
+        device_manager_id: UUID | None = None,
+    ) -> list[TrendPoint]:
+        if reporter_id is not None or device_manager_id is not None:
+            start = start_date or date.today() - timedelta(days=6)
+            end = end_date or start + timedelta(days=6)
+            days = min((end - start).days + 1, 31)
+            wanted_dates = [start + timedelta(days=index) for index in range(days)]
+            statement = select(func.date(RepairReport.created_at), func.count()).where(func.date(RepairReport.created_at).in_(wanted_dates))
+            if reporter_id is not None:
+                statement = statement.where(RepairReport.reporter_id == reporter_id)
+            if device_manager_id is not None:
+                statement = statement.join(Device, RepairReport.device_id == Device.id).where(Device.manager_id == device_manager_id)
+            rows = {metric_date: count for metric_date, count in db.execute(statement.group_by(func.date(RepairReport.created_at))).all()}
+            return [TrendPoint(date=metric_date, value=float(rows.get(metric_date, 0))) for metric_date in wanted_dates]
         return self._metric_trend(db, start_date, end_date, lab_id, OperationMetric.repair_report_count)
 
-    def reservation_status(self, db: Session) -> list[StatusCount]:
-        rows = db.execute(select(Reservation.status, func.count()).group_by(Reservation.status)).all()
+    def reservation_status(
+        self,
+        db: Session,
+        *,
+        applicant_id: UUID | None = None,
+        device_manager_id: UUID | None = None,
+    ) -> list[StatusCount]:
+        statement = select(Reservation.status, func.count()).select_from(Reservation)
+        if applicant_id is not None:
+            statement = statement.where(Reservation.applicant_id == applicant_id)
+        if device_manager_id is not None:
+            statement = statement.join(Device, Reservation.device_id == Device.id).where(Device.manager_id == device_manager_id)
+        rows = db.execute(statement.group_by(Reservation.status)).all()
         counts = {status_: 0 for status_ in ReservationStatus}
         for db_status, count in rows:
             counts[RESERVATION_FROM_DB.get(db_status, db_status)] = count
