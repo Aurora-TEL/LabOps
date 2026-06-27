@@ -18,6 +18,9 @@ coverage/
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
 
 # OS / editor
 .DS_Store
