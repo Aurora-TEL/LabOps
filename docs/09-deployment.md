@@ -88,7 +88,17 @@ Swagger 文档：
 http://localhost:8000/docs
 ```
 
-v1.1 演示验收建议补充检查：
+v1.2 最终集成验收建议补充检查：
+
+```bash
+docker compose ps
+docker compose exec backend alembic upgrade head
+docker compose exec backend python -m app.db.seed
+docker compose run --rm -e PYTHONDONTWRITEBYTECODE=1 backend pytest -p no:cacheprovider
+docker build --target build -t labops-frontend-build-check ./frontend
+```
+
+v1.1 演示验收可使用的基础检查：
 
 ```bash
 docker compose ps
@@ -132,4 +142,4 @@ docker compose down -v
 | 端口被占用 | 在 `.env` 中调整 `BACKEND_PORT`、`FRONTEND_PORT` 或 `POSTGRES_PORT` 后重启 |
 | 演示数据不正确 | 合并 DB Agent 后重新执行迁移和种子数据导入；必要时使用 `docker compose down -v` 清空本地演示卷 |
 
-更完整的复试演示与验收流程见 `docs/11-v1.1-acceptance-demo.md`。
+更完整的 v1.2 复试演示与验收流程见 `docs/13-v1.2-acceptance-demo.md`；v1.1 资料见 `docs/11-v1.1-acceptance-demo.md`。
