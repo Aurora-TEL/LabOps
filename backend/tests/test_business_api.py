@@ -17,6 +17,12 @@ def data(response):
     return response.json()["data"]
 
 
+def auth_headers(username: str = "admin") -> dict[str, str]:
+    response = client.post("/api/v1/auth/login", json={"username": username, "password": "labops123"})
+    token = data(response)["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
 def test_device_list_filter_and_status_update() -> None:
     response = client.get("/api/v1/devices", params={"keyword": "centrifuge", "page_size": 5})
 
@@ -56,15 +62,15 @@ def test_reservation_create_and_conflict() -> None:
         "purpose": "Compatibility testing",
     }
 
-    create_response = client.post("/api/v1/reservations", json=payload)
+    create_response = client.post("/api/v1/reservations", json=payload, headers=auth_headers("student01"))
     created = data(create_response)
     assert create_response.status_code == 201
     assert created["status"] == "pending"
 
-    approve_response = client.post(f"/api/v1/reservations/{created['id']}/approve")
+    approve_response = client.post(f"/api/v1/reservations/{created['id']}/approve", headers=auth_headers("admin"))
     assert data(approve_response)["status"] == "approved"
 
-    conflict_response = client.post("/api/v1/reservations", json=payload)
+    conflict_response = client.post("/api/v1/reservations", json=payload, headers=auth_headers("student01"))
     assert conflict_response.status_code == 409
     assert conflict_response.json()["code"] == 40900
 
@@ -73,6 +79,7 @@ def test_repair_report_and_work_order_flow() -> None:
     repair_response = client.post(
         "/api/v1/repair-reports",
         json={"device_id": DEVICE_ID, "fault_type": "software", "description": "Control panel freezes intermittently."},
+        headers=auth_headers("student01"),
     )
     repair = data(repair_response)
     assert repair_response.status_code == 201

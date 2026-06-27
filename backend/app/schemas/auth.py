@@ -12,7 +12,8 @@ class CurrentUser(BaseModel):
     id: UUID
     username: str
     real_name: str
-    roles: list[str] = []
+    roles: list[str] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
 
 
 class TokenResponse(BaseModel):
