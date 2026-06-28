@@ -126,3 +126,5 @@ LabOps/
 - [v1.5 验收与演示手册](docs/19-v1.5-acceptance-demo.md)
 - [v1.6 设备详情与维护台账](docs/20-v1.6-device-maintenance-ledger.md)
 - [v1.6 验收与演示手册](docs/21-v1.6-acceptance-demo.md)
+- [v1.7 预约日历与设备占用视图](docs/22-v1.7-reservation-calendar.md)
+- [v1.7 验收与演示手册](docs/23-v1.7-acceptance-demo.md)

@@ -1,6 +1,17 @@
 import { requestApi, type PageData } from '@/api/client';
 import { workbenchData } from '@/mock/operations';
-import type { DeviceStatus, MaintenanceRecord, Metric, ProductionRecord, RepairOrder, RepairReport, Reservation, WorkbenchData } from '@/types';
+import type {
+  DeviceStatus,
+  MaintenanceRecord,
+  Metric,
+  ProductionRecord,
+  RepairOrder,
+  RepairReport,
+  Reservation,
+  ReservationAvailability,
+  ReservationCalendarItem,
+  WorkbenchData
+} from '@/types';
 
 export type BackendDeviceStatus = 'available' | 'reserved' | 'in_use' | 'maintenance' | 'disabled';
 export type BackendReservationStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'completed';
@@ -36,10 +47,32 @@ export interface BackendReservation {
   id: string;
   device_id: string;
   applicant_id: string;
+  reservation_no?: string;
   start_time: string;
   end_time: string;
   purpose: string;
   status: BackendReservationStatus;
+}
+
+export interface BackendReservationCalendarItem {
+  id: string;
+  reservation_no: string;
+  device_id: string;
+  applicant_id: string;
+  start_time: string;
+  end_time: string;
+  purpose: string;
+  status: BackendReservationStatus;
+  title: string;
+}
+
+export interface BackendReservationAvailability {
+  device_id: string;
+  start_time: string;
+  end_time: string;
+  available: boolean;
+  conflict_count: number;
+  conflicts: BackendReservationCalendarItem[];
 }
 
 export interface BackendRepairReport {
@@ -223,12 +256,40 @@ export function mapReservation(item: BackendReservation, index: number, devices:
   return {
     rawId: item.id,
     rawDeviceId: item.device_id,
-    id: shortId('RSV', item.id),
+    id: item.reservation_no ?? shortId('RSV', item.id),
     device: findDeviceName(item.device_id, devices, mock.device),
     applicant: `用户 ${item.applicant_id.slice(0, 4)}`,
     department: mock.department,
     slot: formatTimeRange(item.start_time, item.end_time),
+    startAt: item.start_time,
+    endAt: item.end_time,
+    purpose: item.purpose,
     status: reservationStatusMap[item.status] ?? '待审核'
+  };
+}
+
+function mapCalendarItem(item: BackendReservationCalendarItem): ReservationCalendarItem {
+  return {
+    id: item.id,
+    reservationNo: item.reservation_no,
+    deviceId: item.device_id,
+    applicantId: item.applicant_id,
+    startTime: item.start_time,
+    endTime: item.end_time,
+    purpose: item.purpose,
+    status: item.status,
+    title: item.title
+  };
+}
+
+function mapAvailability(item: BackendReservationAvailability): ReservationAvailability {
+  return {
+    deviceId: item.device_id,
+    startTime: item.start_time,
+    endTime: item.end_time,
+    available: item.available,
+    conflictCount: item.conflict_count,
+    conflicts: item.conflicts.map(mapCalendarItem)
   };
 }
 
@@ -369,6 +430,29 @@ export function createReservation(payload: CreateReservationPayload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
+}
+
+export async function getReservationCalendar(params: {
+  start_time: string;
+  end_time: string;
+  device_id?: string;
+}) {
+  const search = new URLSearchParams({
+    start_time: params.start_time,
+    end_time: params.end_time
+  });
+  if (params.device_id) search.set('device_id', params.device_id);
+  const items = await requestApi<BackendReservationCalendarItem[]>(`/reservations/calendar?${search.toString()}`);
+  return items.map(mapCalendarItem);
+}
+
+export async function checkReservationAvailability(deviceId: string, startTime: string, endTime: string) {
+  const search = new URLSearchParams({
+    device_id: deviceId,
+    start_time: startTime,
+    end_time: endTime
+  });
+  return mapAvailability(await requestApi<BackendReservationAvailability>(`/reservations/availability?${search.toString()}`));
 }
 
 export function approveReservation(reservationId: string) {

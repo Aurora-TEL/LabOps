@@ -41,7 +41,31 @@ export interface Reservation {
   applicant: string;
   department: string;
   slot: string;
+  startAt?: string;
+  endAt?: string;
+  purpose?: string;
   status: '待审核' | '已确认' | '进行中' | '已完成';
+}
+
+export interface ReservationCalendarItem {
+  id: string;
+  reservationNo: string;
+  deviceId: string;
+  applicantId: string;
+  startTime: string;
+  endTime: string;
+  purpose: string;
+  status: 'pending' | 'approved' | 'rejected' | 'canceled' | 'completed';
+  title: string;
+}
+
+export interface ReservationAvailability {
+  deviceId: string;
+  startTime: string;
+  endTime: string;
+  available: boolean;
+  conflictCount: number;
+  conflicts: ReservationCalendarItem[];
 }
 
 export interface RepairOrder {

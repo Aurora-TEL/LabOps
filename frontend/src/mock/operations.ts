@@ -48,26 +48,38 @@ export const workbenchData: WorkbenchData = {
   reservations: [
     {
       id: 'RSV-240621',
+      rawDeviceId: 'DEV-3DP-A01',
       device: '3D Printer A01',
       applicant: '当前用户',
       department: '机械工程学院',
       slot: '09:00-11:30',
+      startAt: '2026-06-28T09:00:00+08:00',
+      endAt: '2026-06-28T11:30:00+08:00',
+      purpose: '样品检测与参数验证',
       status: '已确认'
     },
     {
       id: 'RSV-240622',
+      rawDeviceId: 'DEV-LAS-L01',
       device: 'Laser Cutter L01',
       applicant: '当前用户',
       department: '机械工程学院',
       slot: '13:30-15:00',
+      startAt: '2026-06-28T13:30:00+08:00',
+      endAt: '2026-06-28T15:00:00+08:00',
+      purpose: '激光切割工艺参数测试',
       status: '待审核'
     },
     {
       id: 'RSV-240623',
+      rawDeviceId: 'DEV-NET-01',
       device: 'Network Analyzer NET-01',
       applicant: '用户 1024',
       department: '电子信息学院',
       slot: '15:30-18:00',
+      startAt: '2026-06-29T15:30:00+08:00',
+      endAt: '2026-06-29T18:00:00+08:00',
+      purpose: '网络链路稳定性测试',
       status: '已完成'
     }
   ],

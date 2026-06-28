@@ -148,6 +148,9 @@ export const useOperationsStore = defineStore('operations', {
           applicant: '当前用户',
           department: '演示部门',
           slot: `${formatTime(payload.start_time)}-${formatTime(payload.end_time)}`,
+          startAt: payload.start_time,
+          endAt: payload.end_time,
+          purpose: payload.purpose,
           status: '待审核'
         });
         this.markFallback(error, '预约已加入演示列表');

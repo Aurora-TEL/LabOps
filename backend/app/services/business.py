@@ -14,7 +14,7 @@ from app.schemas.common import PageData, utc_now
 from app.schemas.dashboard import DashboardSummary, StatusCount, TrendPoint
 from app.schemas.device import DeviceCreate, DeviceRead, DeviceStatus, DeviceUpdate
 from app.schemas.repair_report import RepairReportCreate, RepairReportRead, RepairReportStatus
-from app.schemas.reservation import ReservationCreate, ReservationRead, ReservationStatus
+from app.schemas.reservation import ReservationAvailabilityRead, ReservationCalendarItem, ReservationCreate, ReservationRead, ReservationStatus
 from app.schemas.work_order import WorkOrderCreate, WorkOrderPriority, WorkOrderRead, WorkOrderStatus
 from app.services.notification import notification_audit_service
 
@@ -202,6 +202,68 @@ class LabOpsService:
             page=page_data.page,
             page_size=page_data.page_size,
             total=page_data.total,
+        )
+
+    def reservation_calendar(
+        self,
+        db: Session,
+        *,
+        start_time: datetime,
+        end_time: datetime,
+        device_id: UUID | None = None,
+        applicant_id: UUID | None = None,
+        device_manager_id: UUID | None = None,
+    ) -> list[ReservationCalendarItem]:
+        if end_time <= start_time:
+            raise _bad_request("end_time must be later than start_time")
+        if end_time - start_time > timedelta(days=62):
+            raise _bad_request("calendar range cannot exceed 62 days")
+
+        statement = select(Reservation).where(
+            Reservation.start_time < end_time,
+            Reservation.end_time > start_time,
+            Reservation.status.in_(["pending", "approved", "completed"]),
+        )
+        if device_manager_id is not None:
+            statement = statement.join(Device, Reservation.device_id == Device.id).where(Device.manager_id == device_manager_id)
+        if device_id is not None:
+            statement = statement.where(Reservation.device_id == device_id)
+        if applicant_id is not None:
+            statement = statement.where(Reservation.applicant_id == applicant_id)
+
+        rows = db.scalars(statement.order_by(Reservation.start_time.asc(), Reservation.created_at.asc())).all()
+        return [self._reservation_calendar_item(item) for item in rows]
+
+    def check_reservation_availability(
+        self,
+        db: Session,
+        *,
+        device_id: UUID,
+        start_time: datetime,
+        end_time: datetime,
+        ignored_reservation_id: UUID | None = None,
+    ) -> ReservationAvailabilityRead:
+        self._device(db, device_id)
+        if end_time <= start_time:
+            raise _bad_request("end_time must be later than start_time")
+
+        conditions = [
+            Reservation.device_id == device_id,
+            Reservation.status == "approved",
+            Reservation.start_time < end_time,
+            Reservation.end_time > start_time,
+        ]
+        if ignored_reservation_id is not None:
+            conditions.append(Reservation.id != ignored_reservation_id)
+
+        conflicts = db.scalars(select(Reservation).where(and_(*conditions)).order_by(Reservation.start_time.asc())).all()
+        return ReservationAvailabilityRead(
+            device_id=device_id,
+            start_time=start_time,
+            end_time=end_time,
+            available=len(conflicts) == 0,
+            conflict_count=len(conflicts),
+            conflicts=[self._reservation_calendar_item(item) for item in conflicts],
         )
 
     def create_reservation(self, db: Session, payload: ReservationCreate, applicant_id: UUID) -> ReservationRead:
@@ -770,6 +832,21 @@ class LabOpsService:
             reject_reason=reservation.reject_reason,
             created_at=reservation.created_at,
             updated_at=reservation.updated_at,
+        )
+
+    @staticmethod
+    def _reservation_calendar_item(reservation: Reservation) -> ReservationCalendarItem:
+        status_ = RESERVATION_FROM_DB.get(reservation.status, ReservationStatus.pending)
+        return ReservationCalendarItem(
+            id=reservation.id,
+            reservation_no=reservation.reservation_no,
+            device_id=reservation.device_id,
+            applicant_id=reservation.applicant_id,
+            start_time=reservation.start_time,
+            end_time=reservation.end_time,
+            purpose=reservation.purpose,
+            status=status_,
+            title=f"{status_.value} reservation {reservation.reservation_no}",
         )
 
     @staticmethod

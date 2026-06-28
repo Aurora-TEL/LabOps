@@ -99,6 +99,64 @@ def test_reservation_create_approve_and_conflict_against_database() -> None:
     assert conflict_response.json()["code"] == 40900
 
 
+def test_reservation_calendar_and_availability_scope() -> None:
+    device = create_test_device()
+    start = datetime.now(timezone.utc) + timedelta(days=35, minutes=uuid4().int % 1000)
+    end = start + timedelta(hours=2)
+    payload = {
+        "device_id": device["id"],
+        "start_time": start.isoformat(),
+        "end_time": end.isoformat(),
+        "purpose": "Calendar availability flow",
+    }
+
+    reservation = data(client.post("/api/v1/reservations", json=payload, headers=auth_headers("ordinary01")))
+    approved = data(client.post(f"/api/v1/reservations/{reservation['id']}/approve", headers=auth_headers("admin")))
+    assert approved["status"] == "approved"
+
+    calendar = data(
+        client.get(
+            "/api/v1/reservations/calendar",
+            params={
+                "start_time": (start - timedelta(hours=1)).isoformat(),
+                "end_time": (end + timedelta(hours=1)).isoformat(),
+                "device_id": device["id"],
+            },
+            headers=auth_headers("admin"),
+        )
+    )
+    assert any(item["id"] == reservation["id"] and item["reservation_no"].startswith("RSV-") for item in calendar)
+
+    ordinary_calendar = data(
+        client.get(
+            "/api/v1/reservations/calendar",
+            params={"start_time": (start - timedelta(hours=1)).isoformat(), "end_time": (end + timedelta(hours=1)).isoformat()},
+            headers=auth_headers("ordinary01"),
+        )
+    )
+    assert all(item["applicant_id"] == reservation["applicant_id"] for item in ordinary_calendar)
+
+    occupied = data(
+        client.get(
+            "/api/v1/reservations/availability",
+            params={"device_id": device["id"], "start_time": start.isoformat(), "end_time": end.isoformat()},
+            headers=auth_headers("ordinary01"),
+        )
+    )
+    assert occupied["available"] is False
+    assert occupied["conflict_count"] >= 1
+
+    adjacent = data(
+        client.get(
+            "/api/v1/reservations/availability",
+            params={"device_id": device["id"], "start_time": end.isoformat(), "end_time": (end + timedelta(hours=1)).isoformat()},
+            headers=auth_headers("ordinary01"),
+        )
+    )
+    assert adjacent["available"] is True
+    assert adjacent["conflict_count"] == 0
+
+
 def test_repair_report_and_work_order_state_flow_updates_related_report() -> None:
     device = seeded_device()
     repair_response = client.post(

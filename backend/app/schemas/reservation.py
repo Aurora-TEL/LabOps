@@ -36,5 +36,26 @@ class ReservationRead(ReservationCreate, TimestampMixin):
     reject_reason: str | None = None
 
 
+class ReservationCalendarItem(BaseModel):
+    id: UUID
+    reservation_no: str
+    device_id: UUID
+    applicant_id: UUID
+    start_time: datetime
+    end_time: datetime
+    purpose: str
+    status: ReservationStatus
+    title: str
+
+
+class ReservationAvailabilityRead(BaseModel):
+    device_id: UUID
+    start_time: datetime
+    end_time: datetime
+    available: bool
+    conflict_count: int
+    conflicts: list[ReservationCalendarItem] = Field(default_factory=list)
+
+
 class ReservationReject(BaseModel):
     reject_reason: str = Field(min_length=1, max_length=1000)

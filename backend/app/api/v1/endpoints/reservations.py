@@ -10,7 +10,14 @@ from app.db.session import get_db
 from app.models import Device, Reservation
 from app.schemas.auth import CurrentUser
 from app.schemas.common import ApiResponse, PageData, ok
-from app.schemas.reservation import ReservationCreate, ReservationRead, ReservationReject, ReservationStatus
+from app.schemas.reservation import (
+    ReservationAvailabilityRead,
+    ReservationCalendarItem,
+    ReservationCreate,
+    ReservationRead,
+    ReservationReject,
+    ReservationStatus,
+)
 from app.services.business import labops_service
 
 router = APIRouter()
@@ -35,6 +42,13 @@ def ensure_can_manage_reservation(db: Session, reservation_id: UUID, current_use
     )
     if db.scalar(statement) is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="reservation is outside owned devices")
+
+
+def ensure_can_access_device(db: Session, device_id: UUID, current_user: CurrentUser) -> None:
+    if not is_device_owner(current_user):
+        return
+    if db.scalar(select(Device.id).where(Device.id == device_id, Device.manager_id == current_user.id)) is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="device is outside owned scope")
 
 
 @router.get("", response_model=ApiResponse[PageData[ReservationRead]])
@@ -73,6 +87,51 @@ def create_reservation(
     db: Session = Depends(get_db),
 ) -> ApiResponse[ReservationRead]:
     return ok(labops_service.create_reservation(db, payload, current_user.id))
+
+
+@router.get("/calendar", response_model=ApiResponse[list[ReservationCalendarItem]])
+def reservation_calendar(
+    start_time: datetime,
+    end_time: datetime,
+    device_id: UUID | None = None,
+    current_user: CurrentUser = Depends(require_any_permission("reservation:view_self", "reservation:view_all")),
+    db: Session = Depends(get_db),
+) -> ApiResponse[list[ReservationCalendarItem]]:
+    if device_id is not None:
+        ensure_can_access_device(db, device_id, current_user)
+    applicant_filter = None if can_view_all(current_user) or is_device_owner(current_user) else current_user.id
+    manager_filter = current_user.id if is_device_owner(current_user) else None
+    return ok(
+        labops_service.reservation_calendar(
+            db,
+            start_time=start_time,
+            end_time=end_time,
+            device_id=device_id,
+            applicant_id=applicant_filter,
+            device_manager_id=manager_filter,
+        )
+    )
+
+
+@router.get("/availability", response_model=ApiResponse[ReservationAvailabilityRead])
+def check_reservation_availability(
+    device_id: UUID,
+    start_time: datetime,
+    end_time: datetime,
+    ignored_reservation_id: UUID | None = None,
+    current_user: CurrentUser = Depends(require_any_permission("reservation:create", "reservation:approve", "reservation:view_all")),
+    db: Session = Depends(get_db),
+) -> ApiResponse[ReservationAvailabilityRead]:
+    ensure_can_access_device(db, device_id, current_user)
+    return ok(
+        labops_service.check_reservation_availability(
+            db,
+            device_id=device_id,
+            start_time=start_time,
+            end_time=end_time,
+            ignored_reservation_id=ignored_reservation_id,
+        )
+    )
 
 
 @router.get("/{reservation_id}", response_model=ApiResponse[ReservationRead])
