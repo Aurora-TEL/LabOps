@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     dashboard,
     devices,
     health,
+    maintenance_records,
     notifications,
     repair_reports,
     reservations,
@@ -24,3 +25,4 @@ api_router.include_router(work_orders.router, prefix="/work-orders", tags=["work
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit-logs"])
 api_router.include_router(system_management.router, prefix="/system", tags=["system-management"])
+api_router.include_router(maintenance_records.router, prefix="/maintenance-records", tags=["maintenance-records"])

@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { Cpu, Plus, RefreshCw } from 'lucide-vue-next';
+import { Cpu, FileClock, Plus, RefreshCw } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 
 import DataState from '@/components/common/DataState.vue';
 import StatusPill from '@/components/common/StatusPill.vue';
 import { useOperationsStore } from '@/stores/operations';
-import type { BackendDeviceStatus } from '@/api/operations';
+import { createMaintenanceRecord, getMaintenanceRecords, type BackendDeviceStatus, type BackendMaintenanceType } from '@/api/operations';
+import type { DeviceStatus, MaintenanceRecord } from '@/types';
 
 const store = useOperationsStore();
 const { data, loading, error, success, source, actionLoading } = storeToRefs(store);
 const showForm = ref(false);
+const selectedDevice = ref<DeviceStatus | null>(null);
+const maintenanceRecords = ref<MaintenanceRecord[]>([]);
+const maintenanceLoading = ref(false);
+const maintenanceError = ref('');
 const form = reactive({
   code: `DEV-${Math.floor(Math.random() * 900 + 100)}`,
   name: '演示设备',
@@ -18,6 +23,31 @@ const form = reactive({
   health_score: 88,
   purchase_date: new Date().toISOString().slice(0, 10)
 });
+const maintenanceForm = reactive({
+  maintenance_type: 'routine' as BackendMaintenanceType,
+  title: '例行保养检查',
+  content: '检查设备外观、关键部件、运行噪声和安全防护状态。',
+  result: '状态正常',
+  next_maintenance_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+});
+
+const selectedRawDeviceId = computed(() => selectedDevice.value?.rawId ?? selectedDevice.value?.id ?? '');
+
+const maintenanceTypeLabels: Record<BackendMaintenanceType, string> = {
+  routine: '例行保养',
+  repair: '维修',
+  calibration: '校准',
+  replacement: '更换',
+  enable: '启用',
+  disable: '停用'
+};
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '未计划';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
 
 async function submitDevice() {
   await store.createDevice({
@@ -28,6 +58,53 @@ async function submitDevice() {
     purchase_date: form.purchase_date || null
   });
   showForm.value = false;
+}
+
+async function openDeviceDetail(device: DeviceStatus) {
+  selectedDevice.value = device;
+  maintenanceLoading.value = true;
+  maintenanceError.value = '';
+  try {
+    maintenanceRecords.value = await getMaintenanceRecords(device.rawId ?? device.id);
+  } catch (error) {
+    maintenanceRecords.value = [];
+    maintenanceError.value = error instanceof Error ? `${error.message}，暂无维护记录` : '维护记录暂不可用';
+  } finally {
+    maintenanceLoading.value = false;
+  }
+}
+
+async function submitMaintenanceRecord() {
+  if (!selectedDevice.value) return;
+  store.beginAction('maintenance:create');
+  maintenanceError.value = '';
+  try {
+    const created = await createMaintenanceRecord({
+      device_id: selectedRawDeviceId.value,
+      maintenance_type: maintenanceForm.maintenance_type,
+      title: maintenanceForm.title,
+      content: maintenanceForm.content,
+      result: maintenanceForm.result,
+      next_maintenance_at: maintenanceForm.next_maintenance_at ? new Date(maintenanceForm.next_maintenance_at).toISOString() : null
+    });
+    maintenanceRecords.value.unshift({
+      id: `MTN-${created.id.slice(0, 8)}`,
+      rawId: created.id,
+      rawDeviceId: created.device_id,
+      type: created.maintenance_type,
+      title: created.title,
+      content: created.content,
+      result: created.result,
+      costAmount: created.cost_amount,
+      maintainedAt: created.maintained_at,
+      nextMaintenanceAt: created.next_maintenance_at
+    });
+    store.success = '维护记录已创建';
+  } catch (error) {
+    maintenanceError.value = error instanceof Error ? error.message : '维护记录创建失败';
+  } finally {
+    store.endAction();
+  }
 }
 </script>
 
@@ -87,8 +164,58 @@ async function submitDevice() {
           <button class="mini-button" type="button" :disabled="actionLoading === `device:${device.id}`" @click="store.setDeviceStatus(device, 'in_use')">运行</button>
           <button class="mini-button" type="button" :disabled="actionLoading === `device:${device.id}`" @click="store.setDeviceStatus(device, 'maintenance')">维护</button>
           <button class="mini-button" type="button" :disabled="actionLoading === `device:${device.id}`" @click="store.setDeviceStatus(device, 'available')">待机</button>
+          <button class="mini-button primary" type="button" @click="openDeviceDetail(device)">详情</button>
         </div>
       </article>
+    </section>
+
+    <section v-if="selectedDevice" class="panel detail-panel">
+      <div class="panel-header">
+        <div>
+          <h2>{{ selectedDevice.name }} 维护台账</h2>
+          <p class="subtle">{{ selectedDevice.id }} · {{ selectedDevice.workshop }} · 健康分 {{ selectedDevice.utilization }}</p>
+        </div>
+        <StatusPill :value="selectedDevice.status" />
+      </div>
+      <div class="detail-layout">
+        <div class="detail-summary">
+          <div><strong>{{ selectedDevice.temperature }}℃</strong><span>实时温度</span></div>
+          <div><strong>{{ selectedDevice.nextMaintenance }}</strong><span>计划保养</span></div>
+          <div><strong>{{ maintenanceRecords.length }}</strong><span>维护记录</span></div>
+        </div>
+
+        <form class="maintenance-form" @submit.prevent="submitMaintenanceRecord">
+          <label class="form-item">
+            类型
+            <select v-model="maintenanceForm.maintenance_type">
+              <option value="routine">例行保养</option>
+              <option value="repair">维修</option>
+              <option value="calibration">校准</option>
+              <option value="replacement">更换</option>
+            </select>
+          </label>
+          <label class="form-item">标题<input v-model.trim="maintenanceForm.title" required /></label>
+          <label class="form-item">下次保养<input v-model="maintenanceForm.next_maintenance_at" type="datetime-local" /></label>
+          <label class="form-item wide">内容<textarea v-model.trim="maintenanceForm.content" required rows="2" /></label>
+          <label class="form-item wide">结果<textarea v-model.trim="maintenanceForm.result" rows="2" /></label>
+          <button class="text-button primary" type="submit" :disabled="actionLoading === 'maintenance:create'">
+            <FileClock :size="16" />{{ actionLoading === 'maintenance:create' ? '保存中' : '新增记录' }}
+          </button>
+        </form>
+      </div>
+
+      <div v-if="maintenanceError" class="data-state warning">{{ maintenanceError }}</div>
+      <DataState :loading="maintenanceLoading" :empty="!maintenanceLoading && maintenanceRecords.length === 0" empty-text="暂无维护记录" />
+      <div class="maintenance-list">
+        <article v-for="record in maintenanceRecords" :key="record.id" class="maintenance-item">
+          <div>
+            <strong>{{ record.title }}</strong>
+            <span>{{ maintenanceTypeLabels[record.type] }} / {{ formatDateTime(record.maintainedAt) }}</span>
+          </div>
+          <p>{{ record.content }}</p>
+          <small>{{ record.result || '未填写结果' }} · 下次 {{ formatDateTime(record.nextMaintenanceAt) }}</small>
+        </article>
+      </div>
     </section>
   </div>
 </template>
@@ -162,6 +289,79 @@ async function submitDevice() {
   margin-top: 14px;
 }
 
+.detail-panel {
+  overflow: hidden;
+}
+
+.detail-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  padding: 18px;
+}
+
+.detail-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-summary div,
+.maintenance-item {
+  border: 1px solid #edf2f7;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 14px;
+}
+
+.detail-summary strong {
+  display: block;
+  color: var(--blue);
+  font-size: 22px;
+}
+
+.detail-summary span,
+.maintenance-item span,
+.maintenance-item small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.maintenance-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.maintenance-form .wide {
+  grid-column: span 2;
+}
+
+.maintenance-list {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.maintenance-item {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1fr) minmax(180px, 0.6fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.maintenance-item strong {
+  display: block;
+  color: #172033;
+}
+
+.maintenance-item p {
+  margin: 0;
+  color: #40516a;
+  line-height: 1.55;
+}
+
 @media (max-width: 1180px) {
   .device-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -171,6 +371,16 @@ async function submitDevice() {
 @media (max-width: 720px) {
   .device-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-layout,
+  .maintenance-form,
+  .maintenance-item {
+    grid-template-columns: 1fr;
+  }
+
+  .maintenance-form .wide {
+    grid-column: auto;
   }
 }
 </style>

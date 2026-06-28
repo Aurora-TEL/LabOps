@@ -247,3 +247,54 @@ def test_notifications_and_audit_log_flow() -> None:
     assert audit_logs["total"] >= 1
     assert any(item["resource_id"] == created["id"] for item in audit_logs["items"])
     assert client.get("/api/v1/audit-logs", headers=auth_headers("ordinary01")).status_code == 403
+
+
+def test_maintenance_records_scope_and_create() -> None:
+    owned_device = device_by_keyword("3D Printer", "owner01")
+    non_owner_device = device_by_keyword("Network Analyzer", "admin")
+
+    existing = data(
+        client.get(
+            "/api/v1/maintenance-records",
+            params={"device_id": owned_device["id"]},
+            headers=auth_headers("owner01"),
+        )
+    )
+    assert existing["total"] >= 1
+
+    forbidden = client.get(
+        "/api/v1/maintenance-records",
+        params={"device_id": non_owner_device["id"]},
+        headers=auth_headers("owner01"),
+    )
+    assert forbidden.status_code == 403
+
+    created = data(
+        client.post(
+            "/api/v1/maintenance-records",
+            json={
+                "device_id": owned_device["id"],
+                "maintenance_type": "routine",
+                "title": "Owner routine inspection",
+                "content": "Checked nozzle, rail and safety cover during API test.",
+                "result": "Passed",
+            },
+            headers=auth_headers("owner01"),
+        )
+    )
+    assert created["device_id"] == owned_device["id"]
+    assert created["maintenance_type"] == "routine"
+
+    assert (
+        client.post(
+            "/api/v1/maintenance-records",
+            json={
+                "device_id": non_owner_device["id"],
+                "maintenance_type": "routine",
+                "title": "Should be forbidden",
+                "content": "Owner cannot maintain non-owned devices.",
+            },
+            headers=auth_headers("owner01"),
+        ).status_code
+        == 403
+    )

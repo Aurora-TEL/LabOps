@@ -20,6 +20,19 @@ export interface DeviceStatus {
   nextMaintenance: string;
 }
 
+export interface MaintenanceRecord {
+  id: string;
+  rawId?: string;
+  rawDeviceId: string;
+  type: 'routine' | 'repair' | 'calibration' | 'replacement' | 'enable' | 'disable';
+  title: string;
+  content: string;
+  result?: string | null;
+  costAmount?: string | null;
+  maintainedAt: string;
+  nextMaintenanceAt?: string | null;
+}
+
 export interface Reservation {
   rawId?: string;
   rawDeviceId?: string;

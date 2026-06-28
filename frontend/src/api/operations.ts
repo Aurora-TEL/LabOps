@@ -1,12 +1,13 @@
 import { requestApi, type PageData } from '@/api/client';
 import { workbenchData } from '@/mock/operations';
-import type { DeviceStatus, Metric, ProductionRecord, RepairOrder, RepairReport, Reservation, WorkbenchData } from '@/types';
+import type { DeviceStatus, MaintenanceRecord, Metric, ProductionRecord, RepairOrder, RepairReport, Reservation, WorkbenchData } from '@/types';
 
 export type BackendDeviceStatus = 'available' | 'reserved' | 'in_use' | 'maintenance' | 'disabled';
 export type BackendReservationStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'completed';
 export type BackendRepairReportStatus = 'submitted' | 'accepted' | 'assigned' | 'processing' | 'finished' | 'closed';
 export type BackendWorkOrderStatus = 'pending' | 'assigned' | 'processing' | 'finished' | 'canceled' | 'closed';
 export type BackendPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type BackendMaintenanceType = 'routine' | 'repair' | 'calibration' | 'replacement' | 'enable' | 'disable';
 
 interface DashboardSummary {
   device_total: number;
@@ -60,6 +61,19 @@ export interface BackendWorkOrder {
   created_at: string;
 }
 
+export interface BackendMaintenanceRecord {
+  id: string;
+  device_id: string;
+  work_order_id?: string | null;
+  maintenance_type: BackendMaintenanceType;
+  title: string;
+  content: string;
+  result?: string | null;
+  cost_amount?: string | null;
+  maintained_at: string;
+  next_maintenance_at?: string | null;
+}
+
 export interface CreateDevicePayload {
   code: string;
   name: string;
@@ -85,6 +99,16 @@ export interface CreateWorkOrderPayload {
   repair_report_id: string;
   priority: BackendPriority;
   assignee_id?: string | null;
+}
+
+export interface CreateMaintenanceRecordPayload {
+  device_id: string;
+  maintenance_type: BackendMaintenanceType;
+  title: string;
+  content: string;
+  result?: string | null;
+  maintained_at?: string | null;
+  next_maintenance_at?: string | null;
 }
 
 export interface WorkbenchLoadResult {
@@ -242,6 +266,21 @@ export function mapWorkOrder(item: BackendWorkOrder, index: number, devices: Dev
   };
 }
 
+export function mapMaintenanceRecord(item: BackendMaintenanceRecord): MaintenanceRecord {
+  return {
+    id: shortId('MTN', item.id),
+    rawId: item.id,
+    rawDeviceId: item.device_id,
+    type: item.maintenance_type,
+    title: item.title,
+    content: item.content,
+    result: item.result,
+    costAmount: item.cost_amount,
+    maintainedAt: item.maintained_at,
+    nextMaintenanceAt: item.next_maintenance_at
+  };
+}
+
 function mapProductionRecords(devices: DeviceStatus[]): ProductionRecord[] {
   if (devices.length === 0) return workbenchData.productionRecords;
 
@@ -377,5 +416,20 @@ export function finishWorkOrder(workOrderId: string, result: string) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ result })
+  });
+}
+
+export async function getMaintenanceRecords(deviceId: string) {
+  const page = await requestApi<PageData<BackendMaintenanceRecord>>(
+    `/maintenance-records?device_id=${encodeURIComponent(deviceId)}&page_size=20`
+  );
+  return page.items.map(mapMaintenanceRecord);
+}
+
+export function createMaintenanceRecord(payload: CreateMaintenanceRecordPayload) {
+  return requestApi<BackendMaintenanceRecord>('/maintenance-records', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
   });
 }

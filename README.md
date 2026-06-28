@@ -124,3 +124,5 @@ LabOps/
 - [v1.4 验收与演示手册](docs/17-v1.4-acceptance-demo.md)
 - [v1.5 系统管理与 RBAC 治理中心](docs/18-v1.5-system-management.md)
 - [v1.5 验收与演示手册](docs/19-v1.5-acceptance-demo.md)
+- [v1.6 设备详情与维护台账](docs/20-v1.6-device-maintenance-ledger.md)
+- [v1.6 验收与演示手册](docs/21-v1.6-acceptance-demo.md)
