@@ -205,6 +205,33 @@ def test_dashboard_aggregates_database_rows_and_preserves_error_shape() -> None:
     assert response.json()["code"] == 40000
 
 
+def test_operation_analytics_report_permissions_and_scope() -> None:
+    admin_report = data(
+        client.get(
+            "/api/v1/analytics/operation-report",
+            params={"start_date": "2026-06-01", "end_date": "2026-07-31"},
+            headers=auth_headers("admin"),
+        )
+    )
+    assert admin_report["start_date"] == "2026-06-01"
+    assert admin_report["end_date"] == "2026-07-31"
+    assert len(admin_report["kpis"]) >= 5
+    assert len(admin_report["reservation_trend"]) == 61
+    assert "device_health" in admin_report
+
+    owner_report = data(
+        client.get(
+            "/api/v1/analytics/operation-report",
+            params={"start_date": "2026-06-01", "end_date": "2026-07-31"},
+            headers=auth_headers("owner01"),
+        )
+    )
+    owner_devices = data(client.get("/api/v1/devices", params={"page_size": 100}, headers=auth_headers("owner01")))
+    assert {item["device_id"] for item in owner_report["device_health"]}.issubset({item["id"] for item in owner_devices["items"]})
+
+    assert client.get("/api/v1/analytics/operation-report", headers=auth_headers("ordinary01")).status_code == 403
+
+
 def test_ordinary_user_is_limited_to_self_service_actions() -> None:
     device = create_test_device()
     start = datetime.now(timezone.utc) + timedelta(days=21, minutes=uuid4().int % 1000)

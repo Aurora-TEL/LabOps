@@ -9,8 +9,9 @@ from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.domain import Device, DeviceCategory, Lab, OperationMetric, RepairReport, Reservation, User, WorkOrder
+from app.models.domain import Device, DeviceCategory, Lab, MaintenanceRecord, OperationMetric, RepairReport, Reservation, User, WorkOrder
 from app.schemas.common import PageData, utc_now
+from app.schemas.analytics import AnalyticsKpi, CategoryCount, DeviceHealthRankItem, OperationReportRead
 from app.schemas.dashboard import DashboardSummary, StatusCount, TrendPoint
 from app.schemas.device import DeviceCreate, DeviceRead, DeviceStatus, DeviceUpdate
 from app.schemas.repair_report import RepairReportCreate, RepairReportRead, RepairReportStatus
@@ -678,6 +679,106 @@ class LabOpsService:
             return [TrendPoint(date=metric_date, value=float(rows.get(metric_date, 0))) for metric_date in wanted_dates]
         return self._metric_trend(db, start_date, end_date, lab_id, OperationMetric.repair_report_count)
 
+    def operation_report(
+        self,
+        db: Session,
+        start_date: date | None,
+        end_date: date | None,
+        *,
+        applicant_id: UUID | None = None,
+        reporter_id: UUID | None = None,
+        device_manager_id: UUID | None = None,
+    ) -> OperationReportRead:
+        start = start_date or date.today() - timedelta(days=6)
+        end = end_date or date.today()
+        if end < start:
+            raise _bad_request("end_date must be later than start_date")
+        if (end - start).days + 1 > 62:
+            end = start + timedelta(days=61)
+        days = (end - start).days + 1
+        range_start = datetime.combine(start, datetime.min.time()).astimezone()
+        range_end = datetime.combine(end + timedelta(days=1), datetime.min.time()).astimezone()
+        device_ids = self._scoped_device_ids(db, device_manager_id)
+
+        devices_statement = select(Device)
+        if device_ids is not None:
+            devices_statement = devices_statement.where(Device.id.in_(device_ids))
+        devices = db.scalars(devices_statement.order_by(Device.health_score.asc(), Device.updated_at.desc())).all()
+
+        reservations_statement = select(Reservation).where(Reservation.start_time >= range_start, Reservation.start_time < range_end)
+        if applicant_id is not None:
+            reservations_statement = reservations_statement.where(Reservation.applicant_id == applicant_id)
+        if device_ids is not None:
+            reservations_statement = reservations_statement.where(Reservation.device_id.in_(device_ids))
+        reservations = db.scalars(reservations_statement).all()
+
+        repairs_statement = select(RepairReport).where(RepairReport.created_at >= range_start, RepairReport.created_at < range_end)
+        if reporter_id is not None:
+            repairs_statement = repairs_statement.where(RepairReport.reporter_id == reporter_id)
+        if device_ids is not None:
+            repairs_statement = repairs_statement.where(RepairReport.device_id.in_(device_ids))
+        repairs = db.scalars(repairs_statement).all()
+
+        maintenance_statement = select(MaintenanceRecord).where(
+            MaintenanceRecord.maintained_at >= range_start,
+            MaintenanceRecord.maintained_at < range_end,
+        )
+        if device_ids is not None:
+            maintenance_statement = maintenance_statement.where(MaintenanceRecord.device_id.in_(device_ids))
+        maintenance_records = db.scalars(maintenance_statement).all()
+
+        work_orders_statement = select(WorkOrder).where(WorkOrder.created_at >= range_start, WorkOrder.created_at < range_end)
+        if device_ids is not None:
+            work_orders_statement = work_orders_statement.where(WorkOrder.device_id.in_(device_ids))
+        work_orders = db.scalars(work_orders_statement).all()
+
+        approved_reservations = [item for item in reservations if item.status == "approved"]
+        reserved_hours = sum((item.end_time - item.start_time).total_seconds() / 3600 for item in approved_reservations)
+        closed_repairs = [item for item in repairs if item.status == "closed" and item.closed_at is not None]
+        repair_hours = [
+            (item.closed_at - item.created_at).total_seconds() / 3600
+            for item in closed_repairs
+            if item.closed_at is not None and item.closed_at >= item.created_at
+        ]
+        avg_repair_hours = sum(repair_hours) / len(repair_hours) if repair_hours else 0.0
+        device_total = len(devices)
+        avg_health = sum(float(item.health_score or 0) for item in devices) / device_total if device_total else 0.0
+        utilization = min(100.0, reserved_hours / max(device_total * days * 8, 1) * 100)
+        closed_work_orders = len([item for item in work_orders if item.status in {"finished", "closed"}])
+        work_order_close_rate = closed_work_orders / max(len(work_orders), 1) * 100 if work_orders else 0.0
+
+        return OperationReportRead(
+            start_date=start,
+            end_date=end,
+            kpis=[
+                AnalyticsKpi(label="设备平均健康分", value=round(avg_health, 1), unit="分", delta=f"{device_total} 台设备"),
+                AnalyticsKpi(label="预约占用时长", value=round(reserved_hours, 1), unit="小时", delta=f"{len(approved_reservations)} 单已确认"),
+                AnalyticsKpi(label="估算利用率", value=round(utilization, 1), unit="%", delta=f"{days} 天窗口"),
+                AnalyticsKpi(
+                    label="平均维修时长",
+                    value=round(avg_repair_hours, 1),
+                    unit="小时",
+                    delta=f"{len(closed_repairs)} 单已关闭",
+                    status="warning" if avg_repair_hours > 24 else "normal",
+                ),
+                AnalyticsKpi(label="工单闭环率", value=round(work_order_close_rate, 1), unit="%", delta=f"{closed_work_orders}/{len(work_orders)}"),
+            ],
+            reservation_trend=self._count_by_date(reservations, start, days, "start_time"),
+            repair_trend=self._count_by_date(repairs, start, days, "created_at"),
+            reservation_status=self._status_counts(reservations, RESERVATION_FROM_DB),
+            fault_types=self._category_counts(repairs, "fault_type"),
+            maintenance_types=self._category_counts(maintenance_records, "maintenance_type"),
+            device_health=[
+                DeviceHealthRankItem(
+                    device_id=str(device.id),
+                    device_name=device.name,
+                    status=DEVICE_FROM_DB.get(device.status, DeviceStatus.maintenance).value,
+                    health_score=round(float(device.health_score or 0), 1),
+                )
+                for device in devices[:8]
+            ],
+        )
+
     def reservation_status(
         self,
         db: Session,
@@ -695,6 +796,39 @@ class LabOpsService:
         for db_status, count in rows:
             counts[RESERVATION_FROM_DB.get(db_status, db_status)] = count
         return [StatusCount(status=status_, count=count) for status_, count in counts.items()]
+
+    def _scoped_device_ids(self, db: Session, device_manager_id: UUID | None) -> list[UUID] | None:
+        if device_manager_id is None:
+            return None
+        return list(db.scalars(select(Device.id).where(Device.manager_id == device_manager_id)).all())
+
+    @staticmethod
+    def _count_by_date(items: list[object], start: date, days: int, field: str) -> list[TrendPoint]:
+        counts = {start + timedelta(days=index): 0 for index in range(days)}
+        for item in items:
+            value = getattr(item, field)
+            metric_date = value.date()
+            if metric_date in counts:
+                counts[metric_date] += 1
+        return [TrendPoint(date=metric_date, value=float(count)) for metric_date, count in counts.items()]
+
+    @staticmethod
+    def _status_counts(items: list[object], status_mapping: dict[str, object]) -> list[StatusCount]:
+        counts: dict[str, int] = {}
+        for item in items:
+            status_value = getattr(item, "status")
+            api_status = status_mapping.get(status_value, status_value)
+            key = _enum_value(api_status) or str(api_status)
+            counts[key] = counts.get(key, 0) + 1
+        return [StatusCount(status=status_, count=count) for status_, count in sorted(counts.items())]
+
+    @staticmethod
+    def _category_counts(items: list[object], field: str) -> list[CategoryCount]:
+        counts: dict[str, int] = {}
+        for item in items:
+            value = str(getattr(item, field) or "unknown")
+            counts[value] = counts.get(value, 0) + 1
+        return [CategoryCount(name=name, count=count) for name, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))]
 
     def _metric_trend(
         self,

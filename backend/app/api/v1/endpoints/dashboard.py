@@ -90,3 +90,4 @@ def get_repair_trend(
             device_manager_id=current_user.id if is_device_owner(current_user) else None,
         )
     )
+

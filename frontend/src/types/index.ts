@@ -116,6 +116,48 @@ export interface WorkbenchData {
   productionRecords: ProductionRecord[];
 }
 
+export interface AnalyticsKpi {
+  label: string;
+  value: number;
+  unit: string;
+  delta: string;
+  status: 'normal' | 'warning' | 'danger';
+}
+
+export interface AnalyticsTrendPoint {
+  date: string;
+  value: number;
+}
+
+export interface AnalyticsStatusCount {
+  status: string;
+  count: number;
+}
+
+export interface AnalyticsCategoryCount {
+  name: string;
+  count: number;
+}
+
+export interface AnalyticsDeviceHealth {
+  deviceId: string;
+  deviceName: string;
+  status: string;
+  healthScore: number;
+}
+
+export interface AnalyticsReport {
+  startDate: string;
+  endDate: string;
+  kpis: AnalyticsKpi[];
+  reservationTrend: AnalyticsTrendPoint[];
+  repairTrend: AnalyticsTrendPoint[];
+  reservationStatus: AnalyticsStatusCount[];
+  faultTypes: AnalyticsCategoryCount[];
+  maintenanceTypes: AnalyticsCategoryCount[];
+  deviceHealth: AnalyticsDeviceHealth[];
+}
+
 export type NotificationType = 'reservation' | 'repair' | 'work_order' | 'system';
 
 export interface NotificationItem {

@@ -128,3 +128,6 @@ LabOps/
 - [v1.6 验收与演示手册](docs/21-v1.6-acceptance-demo.md)
 - [v1.7 预约日历与设备占用视图](docs/22-v1.7-reservation-calendar.md)
 - [v1.7 验收与演示手册](docs/23-v1.7-acceptance-demo.md)
+- [启动、测试与结束说明](docs/24-start-test-stop-guide.md)
+- [v1.8 运营分析报表](docs/25-v1.8-operation-analytics-report.md)
+- [v1.8 验收与演示手册](docs/26-v1.8-acceptance-demo.md)
