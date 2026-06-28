@@ -120,3 +120,7 @@ LabOps/
 - [v1.2 验收与演示手册](docs/13-v1.2-acceptance-demo.md)
 - [v1.3 角色工作台与权限范围](docs/14-v1.3-role-workbenches.md)
 - [v1.3 验收与演示手册](docs/15-v1.3-acceptance-demo.md)
+- [v1.4 消息通知与操作审计](docs/16-v1.4-notification-audit.md)
+- [v1.4 验收与演示手册](docs/17-v1.4-acceptance-demo.md)
+- [v1.5 系统管理与 RBAC 治理中心](docs/18-v1.5-system-management.md)
+- [v1.5 验收与演示手册](docs/19-v1.5-acceptance-demo.md)

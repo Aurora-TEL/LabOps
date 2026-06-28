@@ -189,6 +189,9 @@ def authenticate_user(db: Session, username: str, password: str) -> CurrentUser:
         if user.status != "active":
             raise DisabledUserError
         if verify_password(password, user.password_hash) or password in DEMO_PASSWORDS:
+            user.last_login_at = datetime.now(UTC)
+            db.commit()
+            db.refresh(user)
             return current_user_from_model(user)
         raise InvalidCredentialsError
 

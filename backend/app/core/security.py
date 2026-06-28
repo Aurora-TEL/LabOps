@@ -4,8 +4,11 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
+from app.db.session import get_db
+from app.models import Role, User
 from app.schemas.auth import CurrentUser
 from app.services.auth import ALGORITHM
 
@@ -20,7 +23,10 @@ def credentials_exception(detail: str = "invalid or missing authentication token
     )
 
 
-async def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)] = None) -> CurrentUser:
+async def get_current_user(
+    token: Annotated[str | None, Depends(oauth2_scheme)] = None,
+    db: Session = Depends(get_db),
+) -> CurrentUser:
     if not token:
         raise credentials_exception()
     try:
@@ -30,8 +36,20 @@ async def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)] 
         real_name = payload.get("real_name")
         if not user_id or not username or not real_name:
             raise credentials_exception()
+        parsed_user_id = UUID(str(user_id))
+        user = db.get(User, parsed_user_id, options=[selectinload(User.roles).selectinload(Role.permissions)])
+        if user is not None:
+            if user.status != "active":
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="user is disabled")
+            return CurrentUser(
+                id=user.id,
+                username=user.username,
+                real_name=user.real_name,
+                roles=sorted({role.code for role in user.roles}),
+                permissions=sorted({permission.code for role in user.roles for permission in role.permissions}),
+            )
         return CurrentUser(
-            id=UUID(str(user_id)),
+            id=parsed_user_id,
             username=str(username),
             real_name=str(real_name),
             roles=list(payload.get("roles") or []),

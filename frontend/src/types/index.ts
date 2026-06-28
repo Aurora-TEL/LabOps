@@ -105,3 +105,48 @@ export interface NotificationCenterData {
   notifications: NotificationItem[];
   recentOperations: RecentOperation[];
 }
+
+export interface SystemPermission {
+  id: string;
+  code: string;
+  name: string;
+  resource: string;
+  action: string;
+  description?: string | null;
+}
+
+export interface SystemRole {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  is_system: boolean;
+  permissions: SystemPermission[];
+  user_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SystemUser {
+  id: string;
+  username: string;
+  real_name: string;
+  email?: string | null;
+  phone?: string | null;
+  department?: string | null;
+  student_no?: string | null;
+  employee_no?: string | null;
+  status: 'active' | 'disabled' | 'locked';
+  last_login_at?: string | null;
+  roles: SystemRole[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SystemSummary {
+  user_total: number;
+  active_users: number;
+  disabled_users: number;
+  role_total: number;
+  permission_total: number;
+}

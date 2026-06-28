@@ -1,6 +1,17 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import audit_logs, auth, dashboard, devices, health, notifications, repair_reports, reservations, work_orders
+from app.api.v1.endpoints import (
+    audit_logs,
+    auth,
+    dashboard,
+    devices,
+    health,
+    notifications,
+    repair_reports,
+    reservations,
+    system_management,
+    work_orders,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="/health", tags=["health"])
@@ -12,3 +23,4 @@ api_router.include_router(repair_reports.router, prefix="/repair-reports", tags=
 api_router.include_router(work_orders.router, prefix="/work-orders", tags=["work-orders"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit-logs"])
+api_router.include_router(system_management.router, prefix="/system", tags=["system-management"])
